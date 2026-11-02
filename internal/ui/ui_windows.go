@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,25 +13,114 @@ import (
 	"unsafe"
 
 	webview2 "github.com/jchv/go-webview2"
+	"golang.org/x/sys/windows"
 )
+
+// IconResourceID is the icon ordinal embedded by go-winres (see winres/).
+const IconResourceID = 1
+
+// BackgroundRGB is the app background (#13111c), used for the window,
+// title bar and WebView2 default background so nothing flashes white.
+const BackgroundRGB = 0x13111c
+
+// Options configures the window.
+type Options struct {
+	URL       string
+	Title     string
+	Width     uint // logical (96 DPI) size; scaled by the system DPI
+	Height    uint
+	MinWidth  uint
+	MinHeight uint
+	Debug     bool
+	// StateFile persists window position/size/maximized between runs ("" = off).
+	StateFile string
+}
+
+var (
+	user32   = windows.NewLazySystemDLL("user32.dll")
+	gdi32    = windows.NewLazySystemDLL("gdi32.dll")
+	dwmapi   = windows.NewLazySystemDLL("dwmapi.dll")
+	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
+
+	pSetWindowsHookExW    = user32.NewProc("SetWindowsHookExW")
+	pUnhookWindowsHookEx  = user32.NewProc("UnhookWindowsHookEx")
+	pCallNextHookEx       = user32.NewProc("CallNextHookEx")
+	pGetClassNameW        = user32.NewProc("GetClassNameW")
+	pSetClassLongPtrW     = user32.NewProc("SetClassLongPtrW")
+	pGetWindowPlacement   = user32.NewProc("GetWindowPlacement")
+	pIsWindow             = user32.NewProc("IsWindow")
+	pMonitorFromRect      = user32.NewProc("MonitorFromRect")
+	pGetDpiForSystem      = user32.NewProc("GetDpiForSystem")
+	pShowWindow           = user32.NewProc("ShowWindow")
+	pSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
+	pMessageBoxW          = user32.NewProc("MessageBoxW")
+	pCreateSolidBrush     = gdi32.NewProc("CreateSolidBrush")
+	pDwmSetWindowAttr     = dwmapi.NewProc("DwmSetWindowAttribute")
+	pGetCurrentThreadId   = kernel32.NewProc("GetCurrentThreadId")
+)
+
+const (
+	whCBT             = 5
+	whCallWndProc     = 4
+	hcbtCreateWnd     = 3
+	wmClose           = 0x0010
+	gclpHbrBackground = ^uintptr(9) // -10
+	swShowMaximized   = 3
+	spiGetWorkArea    = 0x0030
+	monitorNull       = 0
+
+	dwmwaUseImmersiveDarkModeOld = 19
+	dwmwaUseImmersiveDarkMode    = 20
+	dwmwaCaptionColor            = 35
+)
+
+type rect struct{ Left, Top, Right, Bottom int32 }
+type point struct{ X, Y int32 }
+
+type windowPlacement struct {
+	Length    uint32
+	Flags     uint32
+	ShowCmd   uint32
+	MinPos    point
+	MaxPos    point
+	NormalPos rect
+}
+
+type createStruct struct {
+	CreateParams uintptr
+	Instance     uintptr
+	Menu         uintptr
+	Parent       uintptr
+	Cy, Cx, Y, X int32
+	Style        int32
+	Name         *uint16
+	Class        *uint16
+	ExStyle      uint32
+}
+
+type cbtCreateWnd struct {
+	Cs          *createStruct
+	InsertAfter uintptr
+}
+
+type cwpStruct struct {
+	LParam  uintptr
+	WParam  uintptr
+	Message uint32
+	Hwnd    uintptr
+}
+
+// windowState is persisted to Options.StateFile.
+type windowState struct {
+	X, Y, W, H int32
+	Maximized  bool
+}
 
 var (
 	mu      sync.Mutex
 	current webview2.WebView
 	closed  bool
 )
-
-// IconResourceID is the icon ordinal embedded by go-winres (see winres/).
-const IconResourceID = 1
-
-// Options configures the window.
-type Options struct {
-	URL    string
-	Title  string
-	Width  uint
-	Height uint
-	Debug  bool
-}
 
 // Available reports whether a native window can be created on this platform.
 func Available() bool { return true }
@@ -43,42 +133,190 @@ func dataDir() string {
 	return filepath.Join(base, "ShockingVRChat", "WebView2")
 }
 
+func colorref(rgb uint32) uint32 { // 0xRRGGBB -> COLORREF 0x00BBGGRR
+	return (rgb&0xff)<<16 | rgb&0xff00 | (rgb>>16)&0xff
+}
+
+func systemDPI() int32 {
+	if pGetDpiForSystem.Find() == nil {
+		if d, _, _ := pGetDpiForSystem.Call(); d > 0 {
+			return int32(d)
+		}
+	}
+	return 96
+}
+
+func workArea() rect {
+	var r rect
+	_, _, _ = pSystemParametersInfo.Call(spiGetWorkArea, 0, uintptr(unsafe.Pointer(&r)), 0)
+	return r
+}
+
+func isOnScreen(r rect) bool {
+	h, _, _ := pMonitorFromRect.Call(uintptr(unsafe.Pointer(&r)), monitorNull)
+	return h != 0
+}
+
+func loadState(path string) *windowState {
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var s windowState
+	if json.Unmarshal(b, &s) != nil || s.W < 200 || s.H < 200 {
+		return nil
+	}
+	if !isOnScreen(rect{s.X, s.Y, s.X + s.W, s.Y + s.H}) {
+		return nil // monitor was removed: fall back to centered default
+	}
+	return &s
+}
+
+func saveState(path string, s *windowState) {
+	if path == "" || s == nil {
+		return
+	}
+	b, _ := json.Marshal(s)
+	_ = os.WriteFile(path, b, 0o644)
+}
+
+func placementOf(hwnd uintptr) *windowState {
+	if ok, _, _ := pIsWindow.Call(hwnd); ok == 0 {
+		return nil
+	}
+	wp := windowPlacement{Length: uint32(unsafe.Sizeof(windowPlacement{}))}
+	if r, _, _ := pGetWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&wp))); r == 0 {
+		return nil
+	}
+	n := wp.NormalPos
+	return &windowState{X: n.Left, Y: n.Top, W: n.Right - n.Left, H: n.Bottom - n.Top, Maximized: wp.ShowCmd == swShowMaximized}
+}
+
+func className(hwnd uintptr) string {
+	buf := make([]uint16, 64)
+	n, _, _ := pGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return windows.UTF16ToString(buf[:n])
+}
+
+// themeWindow applies the dark title bar and background brush.
+func themeWindow(hwnd uintptr) {
+	if pDwmSetWindowAttr.Find() == nil {
+		on := int32(1)
+		if r, _, _ := pDwmSetWindowAttr.Call(hwnd, dwmwaUseImmersiveDarkMode, uintptr(unsafe.Pointer(&on)), 4); r != 0 {
+			_, _, _ = pDwmSetWindowAttr.Call(hwnd, dwmwaUseImmersiveDarkModeOld, uintptr(unsafe.Pointer(&on)), 4)
+		}
+		// Windows 11: tint the caption to the app background (ignored on Win10).
+		c := colorref(BackgroundRGB)
+		_, _, _ = pDwmSetWindowAttr.Call(hwnd, dwmwaCaptionColor, uintptr(unsafe.Pointer(&c)), 4)
+	}
+	if brush, _, _ := pCreateSolidBrush.Call(uintptr(colorref(BackgroundRGB))); brush != 0 {
+		_, _, _ = pSetClassLongPtrW.Call(hwnd, gclpHbrBackground, brush)
+	}
+}
+
 // RunWindow opens the WebView2 window and blocks until it is closed.
 // Returns false immediately if WebView2 is unavailable (runtime missing).
 // Must be called from the main goroutine (locked OS thread).
 func RunWindow(o Options) bool {
 	_ = os.MkdirAll(dataDir(), 0o755)
-	w := webview2.NewWithOptions(webview2.WebViewOptions{
+	// WebView2 paints this before the first page renders (ARGB hex).
+	_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FF13111C")
+
+	dpi := systemDPI()
+	scale := func(v uint) int32 { return int32(v) * dpi / 96 }
+	wa := workArea()
+	w, h := scale(o.Width), scale(o.Height)
+	if aw := (wa.Right - wa.Left) * 95 / 100; w > aw && aw > 0 {
+		w = aw
+	}
+	if ah := (wa.Bottom - wa.Top) * 95 / 100; h > ah && ah > 0 {
+		h = ah
+	}
+	st := loadState(o.StateFile)
+	if st == nil {
+		st = &windowState{W: w, H: h, X: wa.Left + (wa.Right-wa.Left-w)/2, Y: wa.Top + (wa.Bottom-wa.Top-h)/2}
+	}
+
+	// Thread-local hooks: theme + position the window before it is shown,
+	// and remember its placement when the user closes it.
+	var hwnd uintptr
+	var lastState *windowState
+	tid, _, _ := pGetCurrentThreadId.Call()
+	cbt := windows.NewCallback(func(code, wp, lp uintptr) uintptr {
+		if int32(code) == hcbtCreateWnd && hwnd == 0 && className(wp) == "webview" {
+			hwnd = wp
+			cs := (*(**cbtCreateWnd)(unsafe.Pointer(&lp))).Cs // lp is a CBT_CREATEWND*
+			cs.X, cs.Y, cs.Cx, cs.Cy = st.X, st.Y, st.W, st.H
+			themeWindow(wp)
+		}
+		r, _, _ := pCallNextHookEx.Call(0, code, wp, lp)
+		return r
+	})
+	cwp := windows.NewCallback(func(code, wp, lp uintptr) uintptr {
+		if int32(code) >= 0 {
+			m := *(**cwpStruct)(unsafe.Pointer(&lp)) // lp is a CWPSTRUCT*
+			if m.Message == wmClose && m.Hwnd == hwnd && hwnd != 0 {
+				lastState = placementOf(hwnd)
+			}
+		}
+		r, _, _ := pCallNextHookEx.Call(0, code, wp, lp)
+		return r
+	})
+	hCBT, _, _ := pSetWindowsHookExW.Call(whCBT, cbt, 0, tid)
+	hCWP, _, _ := pSetWindowsHookExW.Call(whCallWndProc, cwp, 0, tid)
+	defer func() {
+		if hCWP != 0 {
+			_, _, _ = pUnhookWindowsHookEx.Call(hCWP)
+		}
+	}()
+
+	wv := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     o.Debug,
 		AutoFocus: true,
 		DataPath:  dataDir(),
 		WindowOptions: webview2.WindowOptions{
 			Title:  o.Title,
-			Width:  o.Width,
-			Height: o.Height,
+			Width:  uint(st.W),
+			Height: uint(st.H),
 			IconId: IconResourceID,
-			Center: true,
 		},
 	})
-	if w == nil {
+	if hCBT != 0 {
+		_, _, _ = pUnhookWindowsHookEx.Call(hCBT)
+	}
+	if wv == nil {
 		return false
 	}
 	mu.Lock()
 	if closed {
 		mu.Unlock()
-		w.Destroy()
+		wv.Destroy()
 		return true
 	}
-	current = w
+	current = wv
 	mu.Unlock()
-	w.SetSize(int(o.Width), int(o.Height), webview2.HintNone)
-	w.Navigate(o.URL)
-	w.Run()
+	if o.MinWidth > 0 && o.MinHeight > 0 {
+		wv.SetSize(int(scale(o.MinWidth)), int(scale(o.MinHeight)), webview2.HintMin)
+	}
+	if st.Maximized {
+		_, _, _ = pShowWindow.Call(uintptr(wv.Window()), swShowMaximized)
+	}
+	wv.Navigate(o.URL)
+	wv.Run()
+	// Closed by the user (state captured on WM_CLOSE) or programmatically
+	// via Close() (window still alive here).
+	if s := placementOf(uintptr(wv.Window())); s != nil {
+		lastState = s
+	}
+	saveState(o.StateFile, lastState)
 	mu.Lock()
 	current = nil
 	closed = true
 	mu.Unlock()
-	w.Destroy()
+	wv.Destroy()
 	return true
 }
 
@@ -102,9 +340,7 @@ func OpenBrowser(url string) error {
 
 // ErrorBox shows a modal error dialog.
 func ErrorBox(title, msg string) {
-	user32 := syscall.NewLazyDLL("user32.dll")
-	box := user32.NewProc("MessageBoxW")
 	t, _ := syscall.UTF16PtrFromString(title)
 	m, _ := syscall.UTF16PtrFromString(msg)
-	_, _, _ = box.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), 0x10)
+	_, _, _ = pMessageBoxW.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), 0x10)
 }

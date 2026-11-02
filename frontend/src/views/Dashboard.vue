@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { confirmDialog } from '@/dialog'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api, apiPost, apiDelete, apiPut } from '@/api'
 import QrCode from '@/components/QrCode.vue'
+import { Radio, Clock, Play, Trash2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
@@ -235,7 +237,7 @@ async function loadProfile(name: string) {
 }
 
 async function deleteProfile(name: string) {
-  if (!confirm(t('dashboard.profileDeleteConfirm', { name }))) return
+  if (!(await confirmDialog({ message: t('dashboard.profileDeleteConfirm', { name }), danger: true }))) return
   await apiDelete(`/api/v1/profiles/${encodeURIComponent(name)}`)
   loadProfiles()
 }
@@ -285,11 +287,11 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="stat-card">
-        <span class="stat-icon">📡</span>
+        <Radio class="stat-icon" :size="20" :stroke-width="1.75" />
         <div><div class="stat-val">{{ oscStatus || '-' }}</div><div class="stat-sub">OSC</div></div>
       </div>
       <div class="stat-card">
-        <span class="stat-icon">⏱</span>
+        <Clock class="stat-icon" :size="20" :stroke-width="1.75" />
         <div><div class="stat-val">{{ lastTrigger }}</div><div class="stat-sub">{{ t('dashboard.lastTrigger') }}</div></div>
       </div>
     </div>
@@ -370,8 +372,8 @@ onUnmounted(() => {
           <div class="profile-list">
             <div class="profile-item" v-for="p in profiles" :key="p">
               <span class="profile-name">{{ p }}</span>
-              <button class="prof-btn load" @click="loadProfile(p)">▶</button>
-              <button class="prof-btn del" @click="deleteProfile(p)">✕</button>
+              <button class="icon-action success" :title="t('common.load')" :aria-label="t('common.load')" @click="loadProfile(p)"><Play :size="15" /></button>
+              <button class="icon-action danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click="deleteProfile(p)"><Trash2 :size="15" /></button>
             </div>
             <div v-if="!profiles.length" class="empty">{{ t('dashboard.noProfiles') }}</div>
           </div>
@@ -394,17 +396,15 @@ onUnmounted(() => {
   display: flex; align-items: center; gap: var(--sp-4);
   padding: var(--sp-5);
   background: var(--bg-card);
-  backdrop-filter: var(--blur);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  transition: all var(--transition);
+  transition: var(--transition-props);
 }
-.stat-card:hover { border-color: var(--border-hover); box-shadow: var(--glow-sm); }
 .stat-card.stat-on { border-color: rgba(52, 211, 153, 0.3); box-shadow: 0 0 20px rgba(52,211,153,0.08); }
-.stat-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); transition: all var(--transition); }
+.stat-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); transition: var(--transition-props); }
 .stat-dot.on { background: var(--success); box-shadow: 0 0 12px rgba(52,211,153,0.6); animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100% { box-shadow: 0 0 12px rgba(52,211,153,0.6); } 50% { box-shadow: 0 0 20px rgba(52,211,153,0.3); } }
-.stat-icon { font-size: 1.5em; }
+.stat-icon { color: var(--text-secondary); flex-shrink: 0; }
 .stat-val { font-size: var(--text-base); font-weight: 600; }
 .stat-sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
 
@@ -440,7 +440,7 @@ onUnmounted(() => {
 
 /* QR */
 .qr-tabs { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); }
-.qr-tab { padding: var(--sp-2) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-xs); font-weight: 600; transition: all var(--transition); }
+.qr-tab { padding: var(--sp-2) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-xs); font-weight: 600; transition: var(--transition-props); }
 .qr-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.1); }
 .qr-tab:hover { border-color: var(--border-hover); color: var(--text); }
 .qr-badge { display: inline-block; padding: 2px 10px; border-radius: var(--radius-full); font-size: 10px; font-weight: 700; margin-bottom: var(--sp-3); }
@@ -469,10 +469,6 @@ onUnmounted(() => {
 .profile-item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); transition: background var(--transition); }
 .profile-item:hover { background: rgba(139,92,246,0.05); }
 .profile-name { flex: 1; font-size: var(--text-sm); }
-.prof-btn { border: none; border-radius: var(--radius-full); padding: 3px 10px; cursor: pointer; font-size: var(--text-xs); color: #fff; transition: all var(--transition); }
-.prof-btn:hover { transform: scale(1.05); }
-.prof-btn.load { background: var(--success); }
-.prof-btn.del { background: rgba(248,113,113,0.7); }
 .profile-add { display: flex; gap: var(--sp-2); }
 .profile-add input { flex: 1; }
 .profile-msg { font-size: var(--text-xs); color: var(--success); margin-top: var(--sp-2); }
@@ -483,7 +479,6 @@ onUnmounted(() => {
 .log-line.warn { color: var(--warning); }
 .log-line.error { color: var(--danger); }
 
-.empty { padding: var(--sp-6); text-align: center; color: var(--text-muted); font-size: var(--text-sm); }
 
 @media (max-width: 768px) {
   .stats-row { grid-template-columns: 1fr; }

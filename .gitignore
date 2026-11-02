@@ -4,6 +4,7 @@ profiles/
 recordings/
 curve_config.yaml
 overlimit_rules.yaml
+window_state.json
 *.log
 # build
 dist/

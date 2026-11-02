@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RotateCcw, X } from 'lucide-vue-next'
 import { ref, onMounted, watch, nextTick, computed } from 'vue'
 import { api, apiPost, apiDelete } from '@/api'
 import { useI18n } from '@/i18n'
@@ -402,7 +403,7 @@ onMounted(() => {
 
     <div class="save-bar">
       <button class="btn btn-primary" @click="saveDistance">{{ t('modeDistance.saveDistance') }}</button>
-      <button class="btn btn-ghost" @click="loadDistance">{{ t('common.reload') }}</button>
+      <button class="btn btn-ghost" @click="loadDistance"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
       <span class="msg">{{ distMsg }}</span>
     </div>
 
@@ -418,7 +419,7 @@ onMounted(() => {
 
     <!-- Curve Editor Section -->
     <div class="section-divider"></div>
-    <h2 class="gradient-text" style="font-size:var(--text-xl);margin-bottom:var(--sp-2)">{{ t('modeDistance.curveTitle') }}</h2>
+    <h2 class="section-title">{{ t('modeDistance.curveTitle') }}</h2>
     <p class="page-desc">{{ t('modeDistance.curveDesc') }}</p>
 
     <div class="param-selector">
@@ -459,14 +460,14 @@ onMounted(() => {
             <div v-for="(p, i) in points" :key="i" class="pt-row">
               <span class="pt-idx">{{ i }}</span>
               <span class="pt-coord">({{ p.x.toFixed(3) }}, {{ p.y.toFixed(3) }})</span>
-              <button class="pt-del" @click="points.splice(i, 1); draw()">✕</button>
+              <button class="icon-action danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click="points.splice(i, 1); draw()"><X :size="14" /></button>
             </div>
           </div>
         </div>
         <div class="actions">
           <button class="btn btn-primary" @click="saveCurve">{{ t('modeDistance.curveSave') }}</button>
-          <button class="btn btn-ghost" @click="loadCurve">{{ t('common.reload') }}</button>
-          <button class="btn btn-danger" @click="deleteCurve">{{ t('modeDistance.curveReset') }}</button>
+          <button class="btn btn-ghost" @click="loadCurve"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
+          <button class="btn btn-ghost btn-ghost-danger" @click="deleteCurve">{{ t('modeDistance.curveReset') }}</button>
         </div>
         <div v-if="curveMsg" class="msg-text">{{ curveMsg }}</div>
       </div>
@@ -480,7 +481,7 @@ onMounted(() => {
 .ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-1); font-weight: 500; }
+.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
 .field select, .field input[type="number"] { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
@@ -488,7 +489,6 @@ onMounted(() => {
 .bar { position: relative; height: 8px; background: var(--bg-inset); border-radius: 4px; }
 .fill { position: absolute; top: 0; height: 100%; background: var(--accent); border-radius: 4px; opacity: 0.4; }
 .mark { position: absolute; top: 14px; font-size: 10px; color: var(--text-muted); transform: translateX(-50%); }
-.save-bar { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-5); padding: var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .msg { font-size: var(--text-sm); color: var(--success); }
 
 .section-divider { margin: var(--sp-6) 0; border-top: 1px solid var(--border); }
@@ -499,7 +499,7 @@ onMounted(() => {
 .param-selector select { flex: 1; max-width: 400px; }
 .curve-status { font-size: var(--text-xs); color: var(--accent); white-space: nowrap; }
 
-.editor-grid { display: grid; grid-template-columns: 1fr 240px; gap: var(--sp-4); }
+.editor-grid { display: grid; grid-template-columns: 1fr 240px; gap: var(--sp-4); align-items: start; }
 .canvas-card { padding: var(--sp-3); }
 .curve-canvas {
   width: 100%; height: 320px; cursor: crosshair;
@@ -519,7 +519,7 @@ onMounted(() => {
   cursor: pointer;
   font-size: var(--text-xs);
   font-weight: 500;
-  transition: all var(--transition);
+  transition: var(--transition-props);
 }
 .preset-btn:hover { border-color: var(--accent); color: var(--text); background: rgba(139,92,246,0.06); }
 
@@ -527,8 +527,6 @@ onMounted(() => {
 .pt-row { display: flex; align-items: center; gap: var(--sp-2); padding: 2px 0; font-variant-numeric: tabular-nums; font-size: var(--text-xs); }
 .pt-idx { color: var(--text-muted); width: 16px; }
 .pt-coord { color: var(--text-secondary); flex: 1; }
-.pt-del { border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px 6px; border-radius: 4px; }
-.pt-del:hover { color: var(--danger); }
 
 .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .msg-text { font-size: var(--text-sm); color: var(--success); margin-top: var(--sp-2); }

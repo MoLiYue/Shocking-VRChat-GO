@@ -1,44 +1,65 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, type Component } from 'vue'
+import {
+  LayoutDashboard, SlidersHorizontal, Plug, Gauge, ShieldAlert, Gamepad2, Zap, Ruler, Hand,
+  Shuffle, FlaskConical, ScrollText, Disc, MessageSquare, Settings, Languages, Power,
+  PanelLeftClose, PanelLeftOpen, ChevronDown,
+} from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import TourOverlay from '@/tour/TourOverlay.vue'
+import AppDialog from '@/components/AppDialog.vue'
+import TopProgress from '@/components/TopProgress.vue'
+import { appStatus, startStatusPolling } from '@/status'
+import { confirmDialog } from '@/dialog'
 import { useTour } from '@/tour/useTour'
 
 const { t, locale, setLocale } = useI18n()
-const { start, restart } = useTour()
-const sidebarOpen = ref(true)
+const { start } = useTour()
+
+// Sidebar collapsed state survives reloads.
+const sidebarPref = ref(localStorage.getItem('sidebar_open') !== '0')
+watch(sidebarPref, (v) => localStorage.setItem('sidebar_open', v ? '1' : '0'))
+// Narrow windows / phones always get the icon rail.
+const narrowMq = window.matchMedia('(max-width: 768px)')
+const narrow = ref(narrowMq.matches)
+narrowMq.addEventListener('change', (e) => { narrow.value = e.matches })
+const sidebarOpen = computed(() => sidebarPref.value && !narrow.value)
 
 interface NavItem {
   path?: string
   key?: string
   label: string
-  icon: string
+  icon: Component
   children?: NavItem[]
 }
 
+// Modes group is identified by its i18n key so the expanded state does not
+// depend on the current language.
+const MODES_GROUP_KEY = 'nav.modes'
+
 const navItems = computed<NavItem[]>(() => [
-  { path: '/dashboard', label: t('nav.dashboard'), icon: '⚡' },
-  { path: '/params', label: t('nav.params'), icon: '🎛' },
-  { path: '/sps', label: t('nav.sps'), icon: '🔌' },
-  { path: '/strength', label: t('nav.strength'), icon: '🔋' },
-  { path: '/overlimit-rules', label: t('nav.overlimit'), icon: '⚡' },
+  { path: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+  { path: '/params', label: t('nav.params'), icon: SlidersHorizontal },
+  { path: '/sps', label: t('nav.sps'), icon: Plug },
+  { path: '/strength', label: t('nav.strength'), icon: Gauge },
+  { path: '/overlimit-rules', label: t('nav.overlimit'), icon: ShieldAlert },
   {
-    key: MODES_GROUP_KEY, label: t('nav.modes'), icon: '🎮',
+    key: MODES_GROUP_KEY, label: t('nav.modes'), icon: Gamepad2,
     children: [
-      { path: '/mode/shock', label: t('nav.modeShock'), icon: '💥' },
-      { path: '/mode/distance', label: t('nav.modeDistance'), icon: '📏' },
-      { path: '/mode/touch', label: t('nav.modeTouch'), icon: '🤚' },
-      { path: '/mode/combo', label: t('nav.modeCombo'), icon: '🔀' },
+      { path: '/mode/shock', label: t('nav.modeShock'), icon: Zap },
+      { path: '/mode/distance', label: t('nav.modeDistance'), icon: Ruler },
+      { path: '/mode/touch', label: t('nav.modeTouch'), icon: Hand },
+      { path: '/mode/combo', label: t('nav.modeCombo'), icon: Shuffle },
     ],
   },
-  { path: '/wave-test', label: t('nav.waveTest'), icon: '🧪' },
-  { path: '/logs', label: t('nav.logs'), icon: '📋' },
-  { path: '/recorder', label: t('nav.recorder'), icon: '🎙' },
-  { path: '/chatbox', label: t('nav.chatbox'), icon: '💬' },
-  { path: '/settings', label: t('nav.settings'), icon: '⚙' },
+  { path: '/wave-test', label: t('nav.waveTest'), icon: FlaskConical },
+  { path: '/logs', label: t('nav.logs'), icon: ScrollText },
+  { path: '/recorder', label: t('nav.recorder'), icon: Disc },
+  { path: '/chatbox', label: t('nav.chatbox'), icon: MessageSquare },
+  { path: '/settings', label: t('nav.settings'), icon: Settings },
 ])
 
-const expandedGroups = ref<Set<string>>(new Set())
+const expandedGroups = ref<Set<string>>(new Set([MODES_GROUP_KEY]))
 
 // data-tour anchor contract: map top-level nav paths to stable tour anchors.
 const TOUR_ANCHORS: Record<string, string> = {
@@ -47,64 +68,73 @@ const TOUR_ANCHORS: Record<string, string> = {
   '/strength': 'nav-strength',
 }
 
-// Auto-expand modes group (use nav key as stable identifier)
-const MODES_GROUP_KEY = 'nav.modes'
-expandedGroups.value.add(MODES_GROUP_KEY)
-
 function toggleGroup(key: string) {
-  if (expandedGroups.value.has(key)) {
-    expandedGroups.value.delete(key)
-  } else {
-    expandedGroups.value.add(key)
-  }
+  const s = new Set(expandedGroups.value)
+  if (s.has(key)) s.delete(key)
+  else s.add(key)
+  expandedGroups.value = s
+}
+
+function toggleLocale() {
+  setLocale(locale.value === 'zh' ? 'en' : 'zh')
 }
 
 async function shutdownApp() {
-  if (!confirm(t('nav.shutdownConfirm'))) return
+  const ok = await confirmDialog({
+    message: t('nav.shutdownConfirm'), danger: true, confirmText: t('nav.shutdown'),
+  })
+  if (!ok) return
   try {
     await fetch('/api/v1/shutdown', { method: 'POST' })
   } catch {}
 }
 
-function replayTour() {
-  restart()
-}
+const statusText = computed(() => {
+  if (!appStatus.reachable) return t('statusbar.offline')
+  if (appStatus.devices > 0) return t('statusbar.connected', { count: appStatus.devices })
+  return t('statusbar.disconnected')
+})
+const statusKind = computed(() => (!appStatus.reachable ? 'err' : appStatus.devices > 0 ? 'ok' : 'idle'))
 
 onMounted(() => {
+  startStatusPolling()
   // First run (no tour_done in localStorage) auto-starts the onboarding tour.
   start()
 })
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ collapsed: !sidebarOpen }">
     <!-- Sidebar -->
     <aside class="sidebar" :class="{ closed: !sidebarOpen }">
       <div class="sidebar-brand">
-        <span class="brand-glow">⚡</span>
-        <span class="brand-name gradient-text">Shocking</span>
+        <span class="brand-mark"><Zap :size="16" :stroke-width="2.5" /></span>
+        <span class="brand-name">Shocking VRChat</span>
       </div>
       <nav class="nav">
-        <template v-for="item in navItems" :key="item.label">
+        <template v-for="item in navItems" :key="item.key || item.path">
           <!-- Group with children -->
           <template v-if="item.children">
             <button
               class="nav-link nav-group-toggle"
-              :class="{ expanded: expandedGroups.has(item.key || item.label) }"
-              @click="toggleGroup(item.key || item.label)"
+              :class="{ expanded: expandedGroups.has(item.key!) }"
+              :title="sidebarOpen ? undefined : item.label"
+              :aria-expanded="expandedGroups.has(item.key!)"
+              @click="toggleGroup(item.key!)"
             >
-              <span class="nav-ico">{{ item.icon }}</span>
+              <component :is="item.icon" class="nav-ico" :size="18" :stroke-width="1.75" />
               <span class="nav-txt">{{ item.label }}</span>
-              <span class="nav-arrow">{{ expandedGroups.has(item.key || item.label) ? '▾' : '▸' }}</span>
+              <ChevronDown class="nav-arrow" :size="14" />
             </button>
-            <div class="nav-children" v-show="expandedGroups.has(item.key || item.label)">
+            <div class="nav-children" v-show="expandedGroups.has(item.key!)">
               <router-link
                 v-for="child in item.children" :key="child.path"
                 :to="child.path!"
                 class="nav-link nav-child"
                 active-class="active"
+                :title="sidebarOpen ? undefined : child.label"
               >
-                <span class="nav-ico">{{ child.icon }}</span>
+                <component :is="child.icon" class="nav-ico" :size="16" :stroke-width="1.75" />
                 <span class="nav-txt">{{ child.label }}</span>
               </router-link>
             </div>
@@ -115,167 +145,214 @@ onMounted(() => {
             :to="item.path!"
             class="nav-link"
             active-class="active"
+            :title="sidebarOpen ? undefined : item.label"
             :data-tour="item.path ? TOUR_ANCHORS[item.path] : undefined"
           >
-            <span class="nav-ico">{{ item.icon }}</span>
+            <component :is="item.icon" class="nav-ico" :size="18" :stroke-width="1.75" />
             <span class="nav-txt">{{ item.label }}</span>
           </router-link>
         </template>
       </nav>
-      <div class="lang-switcher">
-        <button class="lang-btn" :class="{ active: locale === 'zh' }" @click="setLocale('zh')">中</button>
-        <button class="lang-btn" :class="{ active: locale === 'en' }" @click="setLocale('en')">EN</button>
+
+      <router-link
+        to="/dashboard"
+        class="conn-status"
+        :class="'conn-' + statusKind"
+        :title="statusText"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="conn-dot" />
+        <span class="conn-txt">{{ statusText }}</span>
+      </router-link>
+
+      <div class="sidebar-footer">
+        <button
+          class="icon-btn"
+          :title="locale === 'zh' ? 'Switch to English' : '切换到中文'"
+          @click="toggleLocale"
+        >
+          <Languages :size="16" />
+          <span class="icon-btn-label">{{ locale === 'zh' ? 'EN' : '中' }}</span>
+        </button>
+        <button class="icon-btn icon-btn-danger" :title="t('nav.shutdown')" @click="shutdownApp">
+          <Power :size="16" />
+        </button>
+        <button
+          v-if="!narrow"
+          class="icon-btn"
+          :title="sidebarOpen ? t('nav.collapse') : t('nav.expand')"
+          :aria-label="sidebarOpen ? t('nav.collapse') : t('nav.expand')"
+          @click="sidebarPref = !sidebarPref"
+        >
+          <PanelLeftClose v-if="sidebarOpen" :size="16" />
+          <PanelLeftOpen v-else :size="16" />
+        </button>
       </div>
-      <button class="shutdown-btn" data-tour="tour-restart" @click="replayTour">{{ t('nav.tourRestart') }}</button>
-      <button class="shutdown-btn" @click="shutdownApp">⏻ {{ t('nav.shutdown') }}</button>
-      <button class="toggle-btn" @click="sidebarOpen = !sidebarOpen">
-        {{ sidebarOpen ? '‹' : '›' }}
-      </button>
     </aside>
 
     <!-- Main -->
     <main class="main">
-      <router-view v-slot="{ Component }">
-        <keep-alive>
-          <component :is="Component" />
-        </keep-alive>
+      <router-view v-slot="{ Component: View }">
+        <Transition name="page" mode="out-in">
+          <keep-alive>
+            <component :is="View" />
+          </keep-alive>
+        </Transition>
       </router-view>
     </main>
 
     <!-- Guided tour coachmark overlay -->
     <TourOverlay />
+    <AppDialog />
+    <TopProgress />
   </div>
 </template>
 
 <style scoped>
 .shell {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 208px 1fr;
   min-height: 100vh;
-  transition: grid-template-columns 250ms ease;
 }
-.shell:has(.sidebar.closed) {
-  grid-template-columns: 56px 1fr;
-}
+.shell.collapsed { grid-template-columns: 60px 1fr; }
 
 /* Sidebar */
 .sidebar {
-  background: rgba(15, 12, 24, 0.95);
-  backdrop-filter: blur(20px);
+  background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: var(--sp-4) 0;
+  padding: var(--sp-4) 0 var(--sp-3);
   position: sticky;
   top: 0;
   height: 100vh;
   overflow: hidden;
-  transition: all 250ms ease;
 }
 .sidebar-brand {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4) var(--sp-6);
+  padding: var(--sp-1) var(--sp-4) var(--sp-5);
+  min-height: 44px;
 }
-.brand-glow {
-  font-size: 1.4em;
-  filter: drop-shadow(0 0 6px rgba(139,92,246,0.5));
+.brand-mark {
+  width: 28px; height: 28px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--gradient-btn);
+  color: #fff;
 }
 .brand-name {
-  font-size: var(--text-lg);
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-size: var(--text-base);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transition: opacity 140ms ease;
 }
-.sidebar.closed .brand-name { opacity: 0; width: 0; }
-.sidebar.closed .nav-txt { opacity: 0; width: 0; }
 
-.nav { flex: 1; padding: 0 var(--sp-2); display: flex; flex-direction: column; gap: 2px; }
+.nav {
+  flex: 1;
+  padding: 0 var(--sp-2);
+  display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto; overflow-x: hidden;
+}
 .nav-link {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-3);
-  border-radius: var(--radius-md);
+  height: 36px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   text-decoration: none;
   font-size: var(--text-sm);
   font-weight: 500;
-  transition: all var(--transition);
+  transition: var(--transition-props);
   position: relative;
-  overflow: hidden;
 }
-.nav-link::before {
+.nav-link:hover { color: var(--text); background: var(--bg-hover); text-decoration: none; }
+.nav-link.active { color: var(--text); background: var(--bg-active); }
+/* active indicator bar */
+.nav-link.active::before {
   content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: var(--gradient-btn);
-  opacity: 0;
-  transition: opacity var(--transition);
+  position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
 }
-.nav-link:hover {
-  color: var(--text);
-  text-decoration: none;
-}
-.nav-link:hover::before { opacity: 0.06; }
-.nav-link.active {
-  color: var(--text);
-  background: rgba(139, 92, 246, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.2);
-}
-.nav-link.active::before { opacity: 0.1; }
-.nav-ico { font-size: 1.1em; width: 24px; text-align: center; flex-shrink: 0; position: relative; z-index: 1; }
-.nav-txt { position: relative; z-index: 1; white-space: nowrap; transition: opacity 200ms; }
-.nav-arrow { margin-left: auto; font-size: 0.7em; color: var(--text-muted); position: relative; z-index: 1; transition: opacity 200ms; }
+.nav-ico { flex-shrink: 0; }
+.nav-txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 140ms ease; }
+.nav-arrow { margin-left: auto; flex-shrink: 0; transition: transform var(--transition), opacity 140ms ease; transform: rotate(-90deg); }
+.nav-group-toggle.expanded .nav-arrow { transform: rotate(0); }
 .nav-group-toggle { width: 100%; text-align: left; background: none; border: none; cursor: pointer; font: inherit; }
-.nav-children { padding-left: 12px; display: flex; flex-direction: column; gap: 1px; }
-.nav-child { font-size: calc(var(--text-sm) - 0.5px); padding: var(--sp-2) var(--sp-3); }
-.sidebar.closed .nav-arrow { opacity: 0; width: 0; }
+.nav-children { display: flex; flex-direction: column; gap: 2px; }
+.nav-child { height: 32px; padding-left: calc(var(--sp-3) + 12px); }
 
-.toggle-btn {
-  margin: var(--sp-2) var(--sp-3);
-  padding: var(--sp-2);
-  border: 1px solid var(--border);
+.sidebar.closed .brand-name,
+.sidebar.closed .nav-txt,
+.sidebar.closed .nav-arrow { opacity: 0; pointer-events: none; }
+.sidebar.closed .nav-child { padding-left: var(--sp-3); }
+.sidebar.closed .sidebar-brand { padding-left: 16px; }
+
+/* Global connection status */
+.conn-status {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: var(--sp-2) var(--sp-2) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: var(--transition-props);
+}
+.conn-status:hover { background: var(--bg-hover); color: var(--text); text-decoration: none; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); margin-left: 5px; }
+.conn-ok .conn-dot { background: var(--success); box-shadow: 0 0 0 3px var(--success-surface); }
+.conn-ok { color: var(--success); }
+.conn-err .conn-dot { background: var(--danger); animation: conn-blink 1.2s ease-in-out infinite; }
+.conn-err { color: var(--danger); }
+@keyframes conn-blink { 50% { opacity: 0.35; } }
+.conn-txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 140ms ease; }
+.sidebar.closed .conn-txt { opacity: 0; }
+
+/* Footer: compact icon buttons */
+.sidebar-footer {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-3) 0;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: var(--sp-2);
+}
+.sidebar.closed .sidebar-footer { flex-direction: column; align-items: center; padding: var(--sp-3) 0 0; }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 32px; min-width: 32px; padding: 0 var(--sp-2);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--text-base);
-  transition: all var(--transition);
+  font: inherit; font-size: var(--text-xs); font-weight: 600;
+  transition: var(--transition-props);
 }
-.toggle-btn:hover { color: var(--text); border-color: var(--border-hover); }
-
-.lang-switcher { display: flex; gap: 4px; padding: var(--sp-2) var(--sp-3); justify-content: center; }
-.lang-btn { padding: 2px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; font-size: 11px; font-weight: 600; transition: all var(--transition); }
-.lang-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.1); }
-.lang-btn:hover { border-color: var(--border-hover); color: var(--text); }
-.shutdown-btn { margin: var(--sp-2) var(--sp-3); padding: var(--sp-2); width: calc(100% - 2 * var(--sp-3)); border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-xs); transition: all var(--transition); }
-.shutdown-btn:hover { color: var(--danger); border-color: var(--danger); background: rgba(239,68,68,0.06); }
+.icon-btn:last-child { margin-left: auto; }
+.sidebar.closed .icon-btn:last-child { margin-left: 0; }
+.sidebar.closed .icon-btn-label { display: none; }
+.icon-btn:hover { color: var(--text); background: var(--bg-hover); }
+.icon-btn-danger:hover { color: var(--danger); background: var(--danger-surface); }
+.icon-btn:focus-visible, .nav-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Main content */
 .main {
   padding: var(--sp-8);
   max-width: 1100px;
   width: 100%;
+  margin: 0 auto;
+  min-width: 0;
 }
 
-/* Page transitions */
-.page-enter-active { transition: opacity 150ms ease, transform 150ms ease; }
-.page-leave-active { transition: opacity 100ms ease; }
-.page-enter-from { opacity: 0; transform: translateY(8px); }
-.page-leave-to { opacity: 0; }
-
-/* Mobile */
+/* Mobile (phone browsers opening the LAN UI) */
 @media (max-width: 768px) {
-  .shell { grid-template-columns: 1fr; }
-  .sidebar {
-    position: fixed; left: 0; top: 0; z-index: 100;
-    width: 200px;
-    transform: translateX(-100%);
-    box-shadow: 4px 0 32px rgba(0,0,0,0.7);
-  }
-  .sidebar:not(.closed) { transform: translateX(0); }
   .main { padding: var(--sp-4); }
 }
 </style>

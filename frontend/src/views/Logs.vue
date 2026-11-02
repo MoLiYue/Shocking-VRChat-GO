@@ -140,5 +140,4 @@ onUnmounted(() => { if (ws) ws.close() })
 .log-error { color: #f87171; }
 .log-critical { color: #ff4444; font-weight: bold; background: rgba(255,68,68,0.1); }
 
-.log-empty { color: var(--text-muted); text-align: center; padding: var(--sp-8); }
 </style>

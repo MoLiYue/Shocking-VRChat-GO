@@ -68,7 +68,7 @@ function draw() {
     ctx.fillStyle = 'rgba(139,92,246,0.06)'
     ctx.fillRect(0, 0, W, H)
     ctx.fillStyle = 'rgba(139,92,246,0.3)'
-    ctx.font = '12px Inter, sans-serif'
+    ctx.font = '12px "Segoe UI", "Microsoft YaHei UI", sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText(props.presetName ? t('common.loading') : t('common.noWaveData'), W / 2, H / 2 + 4)
     return
@@ -141,7 +141,7 @@ function draw() {
 
   // Labels
   ctx.fillStyle = 'rgba(139,92,246,0.4)'
-  ctx.font = '10px Inter, sans-serif'
+  ctx.font = '10px "Segoe UI", "Microsoft YaHei UI", sans-serif'
   ctx.textAlign = 'left'
   const durationSec = (displaySamples * 0.025).toFixed(1)
   ctx.fillText(`${durationSec}s`, 4, H - 4)

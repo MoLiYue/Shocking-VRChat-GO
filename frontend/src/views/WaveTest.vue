@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Play, Square } from 'lucide-vue-next'
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -543,8 +544,8 @@ onUnmounted(() => {
         </div>
 
         <div class="control-bar">
-          <button v-if="!playing" class="btn btn-primary btn-lg" @click="start">{{ t('waveTest.start') }}</button>
-          <button v-else class="btn btn-danger btn-lg" @click="stop">{{ t('waveTest.stop') }}</button>
+          <button v-if="!playing" class="btn btn-primary btn-lg" @click="start"><Play :size="16" fill="currentColor" />{{ t('waveTest.start') }}</button>
+          <button v-else class="btn btn-danger btn-lg" @click="stop"><Square :size="14" fill="currentColor" />{{ t('waveTest.stop') }}</button>
           <span class="msg" v-if="msg">{{ msg }}</span>
         </div>
       </section>
@@ -592,7 +593,7 @@ onUnmounted(() => {
 .preset-row select { flex: 1; }
 .import-msg { font-size: var(--text-xs); margin-top: var(--sp-1); color: var(--text-secondary); }
 .channel-tabs { display: flex; gap: var(--sp-2); }
-.channel-tabs button { padding: var(--sp-2) var(--sp-5); border: 1px solid var(--border); border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); font-weight: 500; transition: all 0.15s; }
+.channel-tabs button { padding: var(--sp-2) var(--sp-5); border: 1px solid var(--border); border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); font-weight: 500; transition: var(--transition-props); }
 .channel-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
 .channel-tabs button:disabled { opacity: 0.5; cursor: not-allowed; }
 .control-bar { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); }
@@ -602,7 +603,6 @@ onUnmounted(() => {
 .preview-canvas { width: 100%; height: 150px; border-radius: var(--radius-md); display: block; }
 .preview-legend { display: flex; gap: var(--sp-4); font-size: var(--text-xs); color: var(--text-muted); padding-top: var(--sp-1); }
 .legend-item { display: flex; align-items: center; gap: var(--sp-1); }
-.empty-preview { padding: var(--sp-6); text-align: center; color: var(--text-muted); font-size: var(--text-sm); }
 .equiv-table { margin-bottom: var(--sp-4); }
 .equiv-row { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); font-size: var(--text-sm); }
 .equiv-row.highlight { background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.2); }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Play, Trash2, Circle, Square } from 'lucide-vue-next'
+import { confirmDialog } from '@/dialog'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api, apiPost, apiDelete } from '@/api'
 import { useI18n } from '@/i18n'
@@ -41,7 +43,7 @@ async function stopPlay() {
 }
 
 async function deleteFile(name: string) {
-  if (!confirm(t('recorder.deleteConfirm', { name }))) return
+  if (!(await confirmDialog({ message: t('recorder.deleteConfirm', { name }), danger: true }))) return
   await apiDelete(`/api/v1/recordings/${encodeURIComponent(name)}`)
   loadFiles()
 }
@@ -132,8 +134,8 @@ onUnmounted(() => timers.forEach(clearInterval))
           {{ recActive ? `${t('recorder.recordingActive')} · ${recCount} ${t('recorder.messages')} · ${(recElapsed / 1000).toFixed(1)}s` : t('recorder.standby') }}
         </div>
         <div class="actions">
-          <button class="btn btn-danger" :disabled="recActive" @click="startRec">{{ t('recorder.startRec') }}</button>
-          <button class="btn btn-ghost" :disabled="!recActive" @click="stopRec">{{ t('recorder.stopRec') }}</button>
+          <button class="btn btn-danger" :disabled="recActive" @click="startRec"><Circle :size="12" fill="currentColor" />{{ t('recorder.startRec') }}</button>
+          <button class="btn btn-ghost" :disabled="!recActive" @click="stopRec"><Square :size="12" fill="currentColor" />{{ t('recorder.stopRec') }}</button>
         </div>
       </section>
 
@@ -148,7 +150,7 @@ onUnmounted(() => timers.forEach(clearInterval))
         <input type="range" v-model.number="speed" min="0.25" max="3" step="0.25">
         <label><input type="checkbox" v-model="loop"> {{ t('recorder.loopPlayback') }}</label>
         <div class="actions">
-          <button class="btn btn-ghost" :disabled="!playActive" @click="stopPlay">{{ t('recorder.stopPlayback') }}</button>
+          <button class="btn btn-ghost" :disabled="!playActive" @click="stopPlay"><Square :size="12" fill="currentColor" />{{ t('recorder.stopPlayback') }}</button>
         </div>
         <div v-if="playActive" class="playback-progress">
           <div class="progress-bar"><div class="fill" :style="{width: (playTotal > 0 ? playProgress / playTotal * 100 : 0) + '%'}"></div></div>
@@ -163,8 +165,8 @@ onUnmounted(() => timers.forEach(clearInterval))
           <div class="file-item" v-for="f in recordings" :key="f.name">
             <span class="file-name">{{ f.name }}</span>
             <span class="file-meta">{{ f.message_count }}{{ t('recorder.messages') }} · {{ (f.duration_ms / 1000).toFixed(1) }}s</span>
-            <button class="fbtn play" @click="startPlay(f.name)">▶</button>
-            <button class="fbtn del" @click="deleteFile(f.name)">✕</button>
+            <button class="icon-action success" :title="t('common.play')" :aria-label="t('common.play')" @click="startPlay(f.name)"><Play :size="15" /></button>
+            <button class="icon-action danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click="deleteFile(f.name)"><Trash2 :size="15" /></button>
           </div>
           <div v-if="!recordings.length" class="empty">{{ t('recorder.noFiles') }}</div>
         </div>
@@ -227,10 +229,6 @@ label { display: block; font-size: var(--text-xs); color: var(--text-muted); mar
 .file-item:hover { background: rgba(139,92,246,0.04); }
 .file-name { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-meta { color: var(--text-muted); font-size: var(--text-xs); }
-.fbtn { border: none; border-radius: var(--radius-sm); padding: 3px 8px; cursor: pointer; color: #fff; font-size: var(--text-xs); transition: transform var(--transition); }
-.fbtn:hover { transform: scale(1.1); }
-.fbtn.play { background: var(--success); }
-.fbtn.del { background: rgba(239,68,68,0.6); }
 
 /* Wave */
 .wave-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
@@ -250,7 +248,6 @@ label { display: block; font-size: var(--text-xs); color: var(--text-muted); mar
 .osc-val { color: var(--accent-2); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
 .osc-time { color: var(--text-muted); min-width: 50px; text-align: right; }
 
-.empty { padding: var(--sp-4); text-align: center; color: var(--text-muted); font-size: var(--text-sm); }
 .msg-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: var(--sp-3) var(--sp-5); background: var(--success); color: #000; border-radius: var(--radius-full); font-size: var(--text-sm); font-weight: 500; }
 
 @media (max-width: 768px) {

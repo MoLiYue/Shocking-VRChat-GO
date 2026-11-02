@@ -335,7 +335,7 @@ func extractZip(path, dir string) error {
 
 func updateScript(pid int, exeDir, exePath, srcDir, tmpDir string) string {
 	excludeDirs := `"_backup" "wave_presets" "dg-lab" "profiles" "recordings"`
-	excludeFiles := fmt.Sprintf(`"%s" "%s" "curve_config.yaml" "overlimit_rules.yaml" "shocking_vrchat.log" "error.log"`,
+	excludeFiles := fmt.Sprintf(`"%s" "%s" "curve_config.yaml" "overlimit_rules.yaml" "window_state.json" "shocking_vrchat.log" "error.log"`,
 		config.FileAdvanced, config.FileBasic)
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\r\n", args...) }

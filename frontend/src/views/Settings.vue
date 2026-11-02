@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Check, CircleCheck, CircleX, RotateCcw } from 'lucide-vue-next'
+import { confirmDialog } from '@/dialog'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -189,7 +191,7 @@ function stopProgressPolling() {
 }
 
 async function applyUpdate() {
-  if (!confirm(t('settings.updateConfirm'))) return
+  if (!(await confirmDialog(t('settings.updateConfirm')))) return
   // Open modal + reset progress
   showUpdateModal.value = true
   updateApplying.value = true
@@ -378,9 +380,9 @@ onUnmounted(() => { stopProgressPolling() })
       </section>
     </div>
 
-    <div class="save-bar">
+    <div class="save-bar sticky">
       <button class="btn btn-primary" @click="save">{{ t('settings.saveSettings') }}</button>
-      <button class="btn btn-ghost" @click="load">{{ t('settings.reloadSettings') }}</button>
+      <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('settings.reloadSettings') }}</button>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
     </div>
 
@@ -444,8 +446,8 @@ onUnmounted(() => { stopProgressPolling() })
           <div class="update-modal-head">
             <h3>
               <span class="spinner" v-if="updateStage !== 'error' && updateStage !== 'done'"></span>
-              <span v-else-if="updateStage === 'done'" class="done-icon">✓</span>
-              <span v-else class="err-icon">✗</span>
+              <CircleCheck v-else-if="updateStage === 'done'" class="done-icon" :size="18" />
+              <CircleX v-else class="err-icon" :size="18" />
               {{ t('settings.updateProgressTitle') }}
             </h3>
             <span class="ver-pill" v-if="updateInfo?.latest">v{{ updateInfo.latest }}</span>
@@ -463,7 +465,7 @@ onUnmounted(() => { stopProgressPolling() })
                 }"
               >
                 <div class="step-dot">
-                  <span v-if="stageIndex(updateStage) > i || updateStage === 'done'">✓</span>
+                  <Check v-if="stageIndex(updateStage) > i || updateStage === 'done'" :size="13" :stroke-width="3" />
                   <span v-else>{{ i + 1 }}</span>
                 </div>
                 <div class="step-label">{{ t('settings.' + stageLabels[s]) }}</div>
@@ -526,12 +528,11 @@ onUnmounted(() => { stopProgressPolling() })
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field:last-child { margin-bottom: 0; }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-2); font-weight: 500; }
+.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .toggle-row { display: flex; align-items: center; gap: var(--sp-2); cursor: pointer; font-size: var(--text-sm); }
 .toggle-row input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
 .field input, .field select { width: 100%; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
-.save-bar { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-5); padding: var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .ie-bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .msg { font-size: var(--text-sm); color: var(--success); }
 .msg.err { color: var(--danger); }
@@ -545,7 +546,7 @@ onUnmounted(() => { stopProgressPolling() })
 .update-badge { display: inline-block; margin-left: var(--sp-2); padding: 1px 8px; border-radius: 99px; background: rgba(139,92,246,0.15); color: var(--accent); font-size: var(--text-xs); font-weight: 600; }
 .update-notes { font-size: var(--text-xs); color: var(--text-muted); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mirror-presets { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); flex-wrap: wrap; }
-.preset-tag { padding: 2px 10px; border: 1px solid var(--border); border-radius: 99px; background: transparent; color: var(--text-muted); font-size: var(--text-xs); cursor: pointer; transition: all var(--transition); }
+.preset-tag { padding: 2px 10px; border: 1px solid var(--border); border-radius: 99px; background: transparent; color: var(--text-muted); font-size: var(--text-xs); cursor: pointer; transition: var(--transition-props); }
 .preset-tag:hover { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.06); }
 
 /* --- Update progress modal --- */
@@ -584,7 +585,7 @@ onUnmounted(() => { stopProgressPolling() })
   display: flex; align-items: center; justify-content: center;
   font-size: var(--text-xs); font-weight: 600;
   border: 2px solid var(--border); background: var(--bg); color: var(--text-muted);
-  transition: all var(--transition);
+  transition: var(--transition-props);
 }
 .step.active .step-dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px rgba(139,92,246,0.15); }
 .step.done .step-dot { border-color: var(--success); background: var(--success); color: #fff; }

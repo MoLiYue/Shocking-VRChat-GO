@@ -83,7 +83,7 @@ function draw() {
     ctx.fillStyle = 'rgba(139,92,246,0.06)'
     ctx.fillRect(0, 0, W, H)
     ctx.fillStyle = 'rgba(139,92,246,0.3)'
-    ctx.font = '12px Inter, sans-serif'
+    ctx.font = '12px "Segoe UI", "Microsoft YaHei UI", sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText(loading.value ? '...' : t('common.noWaveData'), W / 2, H / 2 + 4)
     return
@@ -139,7 +139,7 @@ function draw() {
 
   // Labels
   ctx.fillStyle = 'rgba(139,92,246,0.5)'
-  ctx.font = '10px Inter, sans-serif'
+  ctx.font = '10px "Segoe UI", "Microsoft YaHei UI", sans-serif'
   ctx.textAlign = 'left'
   ctx.fillText(`${(durationMs.value / 1000).toFixed(1)}s`, 4, H - 4)
   ctx.textAlign = 'right'
@@ -201,7 +201,7 @@ onUnmounted(() => {
 .sim-slider label {
   display: block;
   font-size: var(--text-sm);
-  color: var(--text-secondary);
+  color: var(--text-label);
   margin-bottom: var(--sp-1);
   font-weight: 500;
 }

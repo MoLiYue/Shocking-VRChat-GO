@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Lightbulb, Minus, Plus } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -72,7 +73,7 @@ onMounted(load)
     <p class="page-desc">{{ t('strength.desc') }}</p>
 
     <div class="recommend-banner">
-      <span class="recommend-icon">💡</span>
+      <Lightbulb class="recommend-icon" :size="18" />
       <span v-html="t('strength.recommend', { max: '<strong>200</strong>', default: '<strong>5</strong>' })"></span>
     </div>
 
@@ -85,9 +86,9 @@ onMounted(load)
             <input type="range" v-model.number="limitA" min="0" max="200" step="1" @input="onInput">
           </div>
           <div class="value-row">
-            <button class="adj-btn" @click="adj('limitA', -1)">−</button>
+            <button class="adj-btn" aria-label="-1" @click="adj('limitA', -1)"><Minus :size="14" /></button>
             <input type="number" v-model.number="limitA" min="0" max="200" class="num-input" @input="onInput">
-            <button class="adj-btn" @click="adj('limitA', 1)">+</button>
+            <button class="adj-btn" aria-label="+1" @click="adj('limitA', 1)"><Plus :size="14" /></button>
           </div>
           <div class="bar-wrap">
             <div class="bar-fill" :style="{ width: (limitA / 200 * 100) + '%' }"></div>
@@ -99,9 +100,9 @@ onMounted(load)
             <input type="range" v-model.number="overlimitA" min="0" max="200" step="1" @input="onInput">
           </div>
           <div class="value-row">
-            <button class="adj-btn" @click="adj('overlimitA', -1)">−</button>
+            <button class="adj-btn" aria-label="-1" @click="adj('overlimitA', -1)"><Minus :size="14" /></button>
             <input type="number" v-model.number="overlimitA" min="0" max="200" class="num-input" @input="onInput">
-            <button class="adj-btn" @click="adj('overlimitA', 1)">+</button>
+            <button class="adj-btn" aria-label="+1" @click="adj('overlimitA', 1)"><Plus :size="14" /></button>
           </div>
           <p class="hint">{{ t('strength.overlimitHint') }} <strong>{{ overlimitA }}</strong></p>
         </div>
@@ -115,9 +116,9 @@ onMounted(load)
             <input type="range" v-model.number="limitB" min="0" max="200" step="1" @input="onInput">
           </div>
           <div class="value-row">
-            <button class="adj-btn" @click="adj('limitB', -1)">−</button>
+            <button class="adj-btn" aria-label="-1" @click="adj('limitB', -1)"><Minus :size="14" /></button>
             <input type="number" v-model.number="limitB" min="0" max="200" class="num-input" @input="onInput">
-            <button class="adj-btn" @click="adj('limitB', 1)">+</button>
+            <button class="adj-btn" aria-label="+1" @click="adj('limitB', 1)"><Plus :size="14" /></button>
           </div>
           <div class="bar-wrap">
             <div class="bar-fill" :style="{ width: (limitB / 200 * 100) + '%' }"></div>
@@ -129,9 +130,9 @@ onMounted(load)
             <input type="range" v-model.number="overlimitB" min="0" max="200" step="1" @input="onInput">
           </div>
           <div class="value-row">
-            <button class="adj-btn" @click="adj('overlimitB', -1)">−</button>
+            <button class="adj-btn" aria-label="-1" @click="adj('overlimitB', -1)"><Minus :size="14" /></button>
             <input type="number" v-model.number="overlimitB" min="0" max="200" class="num-input" @input="onInput">
-            <button class="adj-btn" @click="adj('overlimitB', 1)">+</button>
+            <button class="adj-btn" aria-label="+1" @click="adj('overlimitB', 1)"><Plus :size="14" /></button>
           </div>
           <p class="hint">{{ t('strength.overlimitHint') }} <strong>{{ overlimitB }}</strong></p>
         </div>
@@ -163,12 +164,12 @@ onMounted(load)
 
 <style scoped>
 .recommend-banner { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-4); margin-bottom: var(--sp-5); background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
-.recommend-icon { font-size: 1.3em; flex-shrink: 0; }
+.recommend-icon { color: var(--warning); flex-shrink: 0; margin-top: 2px; }
 .recommend-banner strong { color: var(--accent); }
 .limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-bottom: var(--sp-4); align-items: stretch; }
 .limit-grid .card { display: flex; flex-direction: column; height: 100%; }
 .field { margin-bottom: 0; }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-2); font-weight: 500; }
+.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .slider-row { display: flex; align-items: center; gap: var(--sp-2); }
 .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 .value-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-2); }
@@ -182,7 +183,7 @@ onMounted(load)
   font-weight: 600;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all var(--transition);
+  transition: var(--transition-props);
   user-select: none;
 }
 .adj-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }

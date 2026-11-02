@@ -169,7 +169,11 @@ func main() {
 		<-quit
 	case !*browser && ui.Available():
 		logx.Info("[ui] Opening WebView2 window: %s", url)
-		if ui.RunWindow(ui.Options{URL: url, Title: "Shocking VRChat", Width: 1280, Height: 860, Debug: *devtools}) {
+		if ui.RunWindow(ui.Options{
+			URL: url, Title: "Shocking VRChat",
+			Width: 1280, Height: 860, MinWidth: 960, MinHeight: 640,
+			Debug: *devtools, StateFile: filepath.Join(base, "window_state.json"),
+		}) {
 			logx.Info("[ui] Window closed.")
 			a.Shutdown()
 			break

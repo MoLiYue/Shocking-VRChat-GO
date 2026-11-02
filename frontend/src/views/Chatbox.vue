@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RotateCcw, Send } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -190,10 +191,10 @@ onMounted(load)
     </section>
 
     <!-- Actions -->
-    <div class="save-bar">
+    <div class="save-bar sticky">
       <button class="btn btn-primary" @click="save">{{ t('chatbox.save') }}</button>
-      <button class="btn btn-ghost" @click="sendTest">{{ t('chatbox.testSend') }}</button>
-      <button class="btn btn-ghost" @click="load">{{ t('common.reload') }}</button>
+      <button class="btn btn-ghost" @click="sendTest"><Send :size="14" />{{ t('chatbox.testSend') }}</button>
+      <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
       <span class="msg" :class="{ err: testMsgErr }">{{ testMsg }}</span>
     </div>
@@ -214,7 +215,7 @@ onMounted(load)
 <style scoped>
 .field { margin-bottom: var(--sp-4); }
 .field:last-child { margin-bottom: 0; }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-2); font-weight: 500; }
+.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .field input { width: 100%; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 
@@ -232,7 +233,7 @@ onMounted(load)
   font-family: var(--font-mono);
   resize: vertical;
   outline: none;
-  transition: all var(--transition);
+  transition: var(--transition-props);
 }
 .template-input:focus {
   border-color: var(--accent);
@@ -249,7 +250,7 @@ onMounted(load)
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   cursor: pointer;
-  transition: all var(--transition);
+  transition: var(--transition-props);
 }
 .var-tag:hover { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.06); }
 
@@ -267,7 +268,6 @@ onMounted(load)
 
 .osc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--sp-4); margin-bottom: var(--sp-4); }
 
-.save-bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-4); padding: var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .msg { font-size: var(--text-sm); color: var(--success); }
 .msg.err { color: var(--danger); }
 

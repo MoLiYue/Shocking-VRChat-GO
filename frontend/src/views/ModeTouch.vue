@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RotateCcw } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -143,7 +144,7 @@ onMounted(() => { loadPresets(); load() })
           </div>
         </div>
 
-        <h2 style="margin-top:var(--sp-5)">{{ t('modeTouch.advancedWaveWindow') }}</h2>
+        <h2 class="card-subhead">{{ t('modeTouch.advancedWaveWindow') }}</h2>
         <div class="field">
           <label>{{ t('modeDistance.windowSize') }}: {{ windowOps }} ops</label>
           <input type="range" v-model.number="windowOps" min="1" max="16" step="1">
@@ -178,9 +179,9 @@ onMounted(() => { loadPresets(); load() })
       />
     </section>
 
-    <div class="save-bar">
-      <button class="btn btn-primary" @click="save">💾 {{ t('common.save') }}</button>
-      <button class="btn btn-ghost" @click="load">↺ {{ t('common.reload') }}</button>
+    <div class="save-bar sticky">
+      <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
+      <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
       <span class="msg">{{ msg }}</span>
     </div>
   </div>
@@ -192,7 +193,7 @@ onMounted(() => { loadPresets(); load() })
 .ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-1); font-weight: 500; }
+.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
 .field select { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
@@ -200,7 +201,6 @@ onMounted(() => { loadPresets(); load() })
 .bar { position: relative; height: 8px; background: var(--bg-inset); border-radius: 4px; }
 .fill { position: absolute; top: 0; height: 100%; background: var(--accent); border-radius: 4px; opacity: 0.4; }
 .mark { position: absolute; top: 14px; font-size: 10px; color: var(--text-muted); transform: translateX(-50%); }
-.save-bar { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-5); padding: var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .msg { font-size: var(--text-sm); color: var(--success); }
 @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
 </style>

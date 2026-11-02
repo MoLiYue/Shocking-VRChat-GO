@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -188,13 +189,13 @@ onMounted(() => { loadChannel('a'); loadChannel('b') })
               <td><input type="checkbox" v-model="p.enabled" @change="dirtyA = true"></td>
               <td><input v-model="editPath" class="edit-input"></td>
               <td><select v-model="editMode" class="edit-select"><option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option></select></td>
-              <td class="actions"><button class="act-btn save" @click="confirmEdit('a')">✓</button><button class="act-btn cancel" @click="cancelEdit('a')">✕</button></td>
+              <td class="actions"><button class="icon-action success" :title="t('common.save')" :aria-label="t('common.save')" @click="confirmEdit('a')"><Check :size="15" /></button><button class="icon-action" :title="t('common.cancel')" :aria-label="t('common.cancel')" @click="cancelEdit('a')"><X :size="15" /></button></td>
             </template>
             <template v-else>
               <td><input type="checkbox" v-model="p.enabled" @change="dirtyA = true"></td>
               <td class="path" :class="{'path-disabled': !p.enabled}"><span class="path-prefix">/avatar/parameters/</span>{{ shortPath(p.path) }}</td>
               <td><span class="mode-badge" :class="'mode-' + p.mode">{{ modeLabel(p.mode) }}</span></td>
-              <td class="actions"><button class="act-btn edit" @click="startEdit('a', i)">✎</button><button class="act-btn del" @click="removeParam('a', i)">🗑</button></td>
+              <td class="actions"><button class="icon-action" :title="t('common.edit')" :aria-label="t('common.edit')" @click="startEdit('a', i)"><Pencil :size="15" /></button><button class="icon-action danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click="removeParam('a', i)"><Trash2 :size="15" /></button></td>
             </template>
           </tr>
           <tr v-if="!paramsA.length"><td colspan="4" class="empty">{{ t('params.noParams') }}</td></tr>
@@ -207,12 +208,12 @@ onMounted(() => { loadChannel('a'); loadChannel('b') })
         <select v-model="newModeA" class="add-select" data-tour="param-mode-select">
           <option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option>
         </select>
-        <button class="btn btn-green" @click="addParam('a')">+</button>
+        <button class="btn btn-success" @click="addParam('a')"><Plus :size="15" />{{ t('common.add') }}</button>
       </div>
 
       <div class="save-row">
-        <button class="btn btn-primary" data-tour="param-save" :disabled="!dirtyA" @click="save('a')">💾 {{ t('common.save') }}</button>
-        <button class="btn btn-ghost" @click="loadChannel('a')">↺</button>
+        <button class="btn btn-primary" data-tour="param-save" :disabled="!dirtyA" @click="save('a')">{{ t('common.save') }}</button>
+        <button class="btn btn-ghost" @click="loadChannel('a')"><RotateCcw :size="14" />{{ t('params.undoChanges') }}</button>
       </div>
     </section>
 
@@ -246,13 +247,13 @@ onMounted(() => { loadChannel('a'); loadChannel('b') })
               <td><input type="checkbox" v-model="p.enabled" @change="dirtyB = true"></td>
               <td><input v-model="editPath" class="edit-input"></td>
               <td><select v-model="editMode" class="edit-select"><option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option></select></td>
-              <td class="actions"><button class="act-btn save" @click="confirmEdit('b')">✓</button><button class="act-btn cancel" @click="cancelEdit('b')">✕</button></td>
+              <td class="actions"><button class="icon-action success" :title="t('common.save')" :aria-label="t('common.save')" @click="confirmEdit('b')"><Check :size="15" /></button><button class="icon-action" :title="t('common.cancel')" :aria-label="t('common.cancel')" @click="cancelEdit('b')"><X :size="15" /></button></td>
             </template>
             <template v-else>
               <td><input type="checkbox" v-model="p.enabled" @change="dirtyB = true"></td>
               <td class="path" :class="{'path-disabled': !p.enabled}"><span class="path-prefix">/avatar/parameters/</span>{{ shortPath(p.path) }}</td>
               <td><span class="mode-badge" :class="'mode-' + p.mode">{{ modeLabel(p.mode) }}</span></td>
-              <td class="actions"><button class="act-btn edit" @click="startEdit('b', i)">✎</button><button class="act-btn del" @click="removeParam('b', i)">🗑</button></td>
+              <td class="actions"><button class="icon-action" :title="t('common.edit')" :aria-label="t('common.edit')" @click="startEdit('b', i)"><Pencil :size="15" /></button><button class="icon-action danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click="removeParam('b', i)"><Trash2 :size="15" /></button></td>
             </template>
           </tr>
           <tr v-if="!paramsB.length"><td colspan="4" class="empty">{{ t('params.noParams') }}</td></tr>
@@ -265,12 +266,12 @@ onMounted(() => { loadChannel('a'); loadChannel('b') })
         <select v-model="newModeB" class="add-select">
           <option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option>
         </select>
-        <button class="btn btn-green" @click="addParam('b')">+</button>
+        <button class="btn btn-success" @click="addParam('b')"><Plus :size="15" />{{ t('common.add') }}</button>
       </div>
 
       <div class="save-row">
-        <button class="btn btn-primary" :disabled="!dirtyB" @click="save('b')">💾 {{ t('common.save') }}</button>
-        <button class="btn btn-ghost" @click="loadChannel('b')">↺</button>
+        <button class="btn btn-primary" :disabled="!dirtyB" @click="save('b')">{{ t('common.save') }}</button>
+        <button class="btn btn-ghost" @click="loadChannel('b')"><RotateCcw :size="14" />{{ t('params.undoChanges') }}</button>
       </div>
     </section>
 
@@ -303,11 +304,6 @@ td { padding: var(--sp-2); font-size: var(--text-sm); border-bottom: 1px solid v
 .mode-combo { background: var(--warning-surface); color: var(--warning); }
 .mode-boost { background: rgba(167,139,250,0.1); color: var(--purple); }
 .actions { display: flex; gap: var(--sp-1); }
-.act-btn { border: none; border-radius: var(--radius-sm); padding: var(--sp-1) var(--sp-2); cursor: pointer; font-size: var(--text-sm); background: transparent; color: var(--text-muted); transition: color var(--transition); }
-.act-btn:hover { color: var(--text); }
-.act-btn.del:hover { color: var(--danger); }
-.act-btn.save { color: var(--success); }
-.act-btn.cancel { color: var(--danger); }
 .editing { background: rgba(99,102,241,0.04); }
 .disabled-row { opacity: 0.5; }
 .path-disabled { text-decoration: line-through; }

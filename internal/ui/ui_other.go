@@ -13,11 +13,14 @@ import (
 
 // Options configures the window.
 type Options struct {
-	URL    string
-	Title  string
-	Width  uint
-	Height uint
-	Debug  bool
+	URL       string
+	Title     string
+	Width     uint
+	Height    uint
+	MinWidth  uint
+	MinHeight uint
+	Debug     bool
+	StateFile string
 }
 
 // Available reports whether a native window can be created on this platform.

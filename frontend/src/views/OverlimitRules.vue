@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -88,7 +89,7 @@ onMounted(load)
       <span class="status-label">{{ t('overlimit.currentEffective') }}</span>
       <span class="status-chip" :class="{ active: effective.A > 0 }">A: {{ effective.A > 0 ? effective.A : '—' }}</span>
       <span class="status-chip" :class="{ active: effective.B > 0 }">B: {{ effective.B > 0 ? effective.B : '—' }}</span>
-      <button class="btn btn-ghost btn-sm" @click="load" :title="t('overlimit.refreshStatus')">↻</button>
+      <button class="icon-action" @click="load" :title="t('overlimit.refreshStatus')" :aria-label="t('overlimit.refreshStatus')"><RefreshCw :size="14" /></button>
     </div>
 
     <div class="rules-list">
@@ -100,9 +101,9 @@ onMounted(load)
             <span class="toggle-label">{{ rule.enabled ? t('common.enable') : t('common.disable') }}</span>
           </label>
           <div class="rule-actions">
-            <button class="btn-icon" @click="moveUp(i)" :disabled="i === 0" :title="t('overlimit.moveUp')">↑</button>
-            <button class="btn-icon" @click="moveDown(i)" :disabled="i === rules.length - 1" :title="t('overlimit.moveDown')">↓</button>
-            <button class="btn-icon danger" @click="removeRule(i)" :title="t('common.delete')">✕</button>
+            <button class="icon-action" @click="moveUp(i)" :disabled="i === 0" :title="t('overlimit.moveUp')" :aria-label="t('overlimit.moveUp')"><ArrowUp :size="15" /></button>
+            <button class="icon-action" @click="moveDown(i)" :disabled="i === rules.length - 1" :title="t('overlimit.moveDown')" :aria-label="t('overlimit.moveDown')"><ArrowDown :size="15" /></button>
+            <button class="icon-action danger" @click="removeRule(i)" :title="t('common.delete')" :aria-label="t('common.delete')"><Trash2 :size="15" /></button>
           </div>
         </div>
 
@@ -133,10 +134,10 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="save-bar">
-      <button class="btn btn-primary" @click="addRule">{{ t('overlimit.addRule') }}</button>
+    <div class="save-bar sticky">
+      <button class="btn btn-ghost" @click="addRule"><Plus :size="15" />{{ t('overlimit.addRule') }}</button>
       <button class="btn btn-primary" @click="save">{{ t('overlimit.saveAll') }}</button>
-      <button class="btn btn-ghost" @click="load">{{ t('overlimit.reloadAll') }}</button>
+      <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('overlimit.reloadAll') }}</button>
       <span class="msg" :class="{ ok: msgType === 'ok', err: msgType === 'err' }">{{ msg }}</span>
     </div>
 
@@ -173,10 +174,6 @@ onMounted(load)
 .toggle input[type="checkbox"] { accent-color: var(--accent); }
 .toggle-label { user-select: none; }
 .rule-actions { display: flex; gap: var(--sp-1); }
-.btn-icon { background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-muted); font-size: var(--text-sm); transition: all 0.15s; }
-.btn-icon:hover { border-color: var(--border-hover); color: var(--text); }
-.btn-icon:disabled { opacity: 0.3; cursor: not-allowed; }
-.btn-icon.danger:hover { border-color: var(--danger); color: var(--danger); }
 .rule-body { display: flex; flex-direction: column; gap: var(--sp-2); }
 .condition-row, .effect-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .cond-label { font-size: var(--text-sm); color: var(--accent); font-weight: 600; min-width: 24px; }
@@ -186,8 +183,6 @@ onMounted(load)
 .effect-channel { width: 100px; font-size: var(--text-sm); }
 .effect-text { font-size: var(--text-sm); color: var(--text-secondary); }
 .effect-value { width: 80px; text-align: center; font-size: var(--text-sm); font-weight: 600; }
-.empty-state { text-align: center; padding: var(--sp-6); color: var(--text-muted); font-size: var(--text-sm); }
-.save-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-5); padding: var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .msg { font-size: var(--text-sm); color: var(--text-muted); }
 .msg.ok { color: var(--success); }
 .msg.err { color: var(--danger); }
