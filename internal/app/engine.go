@@ -1,0 +1,538 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"shockingvrc/internal/config"
+	"shockingvrc/internal/device"
+	"shockingvrc/internal/handler"
+	"shockingvrc/internal/logx"
+	"shockingvrc/internal/osc"
+	"shockingvrc/internal/queue"
+	"shockingvrc/internal/sps"
+	"shockingvrc/internal/wave"
+)
+
+// Engine runs the OSC listener, DG-LAB V3 WS server, command queue and handlers.
+// The WS server lifecycle is independent so restarts keep device connections.
+type Engine struct {
+	a        *App
+	opMu     sync.Mutex // serializes start/stop/restart
+	stateMu  sync.Mutex
+	running  bool
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	oscSrv   *osc.Server
+	ws       *device.V3Server
+	handlers []*handler.Shock
+}
+
+// Running reports whether the engine is started.
+func (e *Engine) Running() bool {
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	return e.running
+}
+
+// Handlers returns the active handlers.
+func (e *Engine) Handlers() []*handler.Shock {
+	e.stateMu.Lock()
+	defer e.stateMu.Unlock()
+	return append([]*handler.Shock{}, e.handlers...)
+}
+
+func (e *Engine) build() (*osc.Dispatcher, []*handler.Shock) {
+	a := e.a
+	d := &osc.Dispatcher{Hook: a.oscGlobalHook}
+	deps := &handler.Deps{
+		Cfg: a.Cfg, Hub: a.Hub, Lib: a.Lib, Queue: a.Queue,
+		ActivityObserver: a.recordOSCActivity,
+		CurveGetter:      a.curvePoints,
+	}
+	var hs []*handler.Shock
+	for _, ch := range []string{"A", "B"} {
+		byMode := map[string]*handler.Shock{}
+		params := config.AsList(a.Cfg.Get("dglab3", config.ChannelKey(ch), "avatar_params"))
+		for _, p := range params {
+			pm := config.AsMap(p)
+			if pm == nil {
+				continue
+			}
+			path := config.Str(pm["path"], "")
+			if !config.Bool(pm["enabled"], true) {
+				logx.Info("[engine] Channel %s skipping disabled param: %s", ch, path)
+				continue
+			}
+			mode := config.Str(pm["mode"], "distance")
+			h := byMode[mode]
+			if h == nil {
+				var err error
+				h, err = handler.New(deps, ch, mode)
+				if err != nil {
+					logx.Error("[engine] Channel %s param %s: %v", ch, path, err)
+					continue
+				}
+				byMode[mode] = h
+				hs = append(hs, h)
+			}
+			logx.Info("[engine] Channel %s mode %s listening %s", ch, mode, path)
+			d.Map(path, h.OSC)
+		}
+	}
+	return d, hs
+}
+
+// Start starts the engine (no-op if running).
+func (e *Engine) Start() {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	e.start()
+}
+
+func (e *Engine) start() {
+	if e.Running() {
+		logx.Warn("[engine] Already running, stop first.")
+		return
+	}
+	a := e.a
+	disp, hs := e.build()
+	a.Queue.Clear()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	host := config.Str(a.Cfg.Get("osc", "listen_host"), "127.0.0.1")
+	port := config.Int(a.Cfg.Get("osc", "listen_port"), 9001)
+	srv, err := osc.Listen(host, port, disp)
+	if err != nil {
+		cancel()
+		logx.Error("[engine] OSC listen failed, possible port conflict: %v", err)
+		return
+	}
+	logx.Success("[engine] OSC Listening: %s:%d", host, port)
+
+	loops := []func(context.Context){
+		a.commandQueueProcessor, a.strengthBoostChecker, a.waveTestLoop,
+		a.statusPusher, a.ogbHeartbeat,
+	}
+	for _, f := range loops {
+		e.wg.Add(1)
+		go func(f func(context.Context)) {
+			defer e.wg.Done()
+			f(ctx)
+		}(f)
+	}
+	for _, h := range hs {
+		h.Start()
+	}
+	e.stateMu.Lock()
+	e.cancel, e.oscSrv, e.handlers = cancel, srv, hs
+	wsUp := e.ws != nil
+	e.stateMu.Unlock()
+	if !wsUp {
+		e.startWS()
+	}
+	e.stateMu.Lock()
+	e.running = true
+	e.stateMu.Unlock()
+	logx.Info("[engine] Started.")
+}
+
+func (e *Engine) startWS() {
+	a := e.a
+	host := config.Str(a.Cfg.Get("ws", "listen_host"), "0.0.0.0")
+	port := config.Int(a.Cfg.Get("ws", "listen_port"), 28846)
+	s := device.NewV3Server(a.Hub, func() string { return config.Str(a.Cfg.Get("ws", "master_uuid"), "") })
+	if err := s.Start(host, port); err != nil {
+		logx.Error("[engine] WS server listen failed, possible port conflict: %v", err)
+		return
+	}
+	e.stateMu.Lock()
+	e.ws = s
+	e.stateMu.Unlock()
+	logx.Success("[engine] WS Listening: %s:%d", host, port)
+}
+
+func (e *Engine) stopWS() {
+	e.stateMu.Lock()
+	s := e.ws
+	e.ws = nil
+	e.stateMu.Unlock()
+	if s != nil {
+		s.Stop()
+		logx.Info("[engine] WS server stopped.")
+	}
+}
+
+// Stop stops the engine; keepWS preserves DG-LAB device connections.
+func (e *Engine) Stop(keepWS bool) {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	e.stop(keepWS)
+}
+
+func (e *Engine) stop(keepWS bool) {
+	if !e.Running() {
+		if !keepWS {
+			e.stopWS()
+		}
+		return
+	}
+	a := e.a
+	a.waveTestMu.Lock()
+	wasTesting := a.waveTest.Active
+	a.waveTest.Active = false
+	a.waveTestMu.Unlock()
+	if wasTesting {
+		a.setOSCQueues(true)
+		a.Hub.SetSuppressClear(false)
+		a.refreshLimits()
+		logx.Info("[engine] Wave test stopped due to engine shutdown.")
+	}
+	logx.Info("[engine] Stopping...")
+	e.stateMu.Lock()
+	cancel, srv, hs := e.cancel, e.oscSrv, e.handlers
+	e.stateMu.Unlock()
+	if !keepWS {
+		e.stopWS()
+	}
+	if srv != nil {
+		srv.Close()
+	}
+	if cancel != nil {
+		cancel()
+	}
+	e.wg.Wait()
+	for _, h := range hs {
+		h.Stop()
+	}
+	e.stateMu.Lock()
+	e.running, e.oscSrv, e.handlers, e.cancel = false, nil, nil, nil
+	e.stateMu.Unlock()
+	if keepWS {
+		logx.Info("[engine] Stopped. (WS preserved)")
+	} else {
+		logx.Info("[engine] Stopped.")
+	}
+}
+
+// Restart restarts the engine.
+func (e *Engine) Restart(keepWS bool) {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	if keepWS {
+		logx.Info("[engine] Restarting... (preserving WS connections)")
+	} else {
+		logx.Info("[engine] Restarting...")
+	}
+	e.stop(keepWS)
+	e.start()
+}
+
+// RestartWS restarts only the DG-LAB WS server.
+func (e *Engine) RestartWS() {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	logx.Info("[engine] Restarting WS server (port/host changed)...")
+	e.stopWS()
+	e.startWS()
+}
+
+// RestartLater schedules a restart after delay (like asyncio.create_task + sleep).
+func (e *Engine) RestartLater(delay time.Duration, keepWS bool) {
+	go func() {
+		time.Sleep(delay)
+		e.Restart(keepWS)
+	}()
+}
+
+// ---------------------------------------------------------------- loops
+
+func (a *App) oscGlobalHook(addr string, args []any) {
+	a.overlimitOSCHook(addr, args)
+	if sps.IsOGBAddress(addr) {
+		a.trackOGBZone(addr)
+	}
+	a.rec.record(addr, args)
+}
+
+func (a *App) commandQueueProcessor(ctx context.Context) {
+	for {
+		cmd, err := a.Queue.Get(ctx)
+		if err != nil {
+			return
+		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					logx.Error("[queue] error: %v", r)
+				}
+			}()
+			switch cmd.Action {
+			case "osc_trigger":
+				if cmd.Fn != nil {
+					cmd.Fn()
+				}
+			case "wave":
+				a.Hub.BroadcastWave(cmd.Channel, cmd.Value)
+			case "clear":
+				if !a.waveTestActive() {
+					a.Hub.BroadcastClear(cmd.Channel)
+				}
+			}
+		}()
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+func (a *App) strengthBoostChecker(ctx context.Context) {
+	for sleepCtx(ctx, 100*time.Millisecond) {
+		now := time.Now()
+		for _, ch := range []string{"A", "B"} {
+			a.boostMu.Lock()
+			v := a.boost[ch]
+			expired := v > 0 && !now.Before(a.boostExpire[ch])
+			if expired {
+				a.boost[ch] = 0
+			}
+			a.boostMu.Unlock()
+			if expired {
+				a.Hub.BroadcastSetStrength(ch, "0", v, true)
+				logx.Debug("[strength] channel=%s reverted -%d", ch, v)
+			}
+		}
+	}
+}
+
+func (a *App) statusPusher(ctx context.Context) {
+	last := -1
+	for sleepCtx(ctx, 2*time.Second) {
+		if !a.Live.HasSubscribers("status") {
+			continue
+		}
+		n := a.Hub.Count()
+		if n == last {
+			continue
+		}
+		last = n
+		devs := []map[string]any{}
+		for _, d := range a.Hub.Devices() {
+			s := d.Status()
+			devs = append(devs, map[string]any{
+				"strength": s.Strength, "strength_max": s.StrengthMax, "strength_limit": s.StrengthLimit,
+			})
+		}
+		a.Live.Broadcast("status", map[string]any{"devices": devs, "engine_running": true})
+	}
+}
+
+// ogbHeartbeat periodically tells the avatar an OGB-compatible tool listens.
+// It never sends false on exit: other OGB tools may still be running.
+func (a *App) ogbHeartbeat(ctx context.Context) {
+	logx.Info("[sps] OGB_ENABLED heartbeat started")
+	defer logx.Info("[sps] OGB_ENABLED heartbeat stopped")
+	var client *osc.Client
+	lastTarget := ""
+	defer func() {
+		if client != nil {
+			client.Close()
+		}
+	}()
+	for {
+		cfg := config.AsMap(a.Cfg.Get("sps"))
+		interval := config.Clamp(config.Float(cfg["ogb_enabled_interval"], 5.0), 1, 60)
+		if config.Bool(cfg["enabled"], true) && config.Bool(cfg["ogb_enabled_heartbeat"], true) {
+			host := config.Str(cfg["ogb_target_host"], "127.0.0.1")
+			port := config.Int(cfg["ogb_target_port"], 9000)
+			if port >= 1 && port <= 65535 {
+				target := fmt.Sprintf("%s:%d", host, port)
+				if client == nil || target != lastTarget {
+					if client != nil {
+						client.Close()
+					}
+					c, err := osc.NewClient(host, port)
+					if err != nil {
+						logx.Warn("[sps] OGB_ENABLED send failed, will retry: %v", err)
+						client = nil
+					} else {
+						client, lastTarget = c, target
+						logx.Info("[sps] OGB_ENABLED -> %s every %.0fs", target, interval)
+					}
+				}
+				if client != nil {
+					if err := client.Send("/avatar/parameters/OGB_ENABLED", true); err != nil {
+						logx.Warn("[sps] OGB_ENABLED send failed, will retry: %v", err)
+						client.Close()
+						client, lastTarget = nil, ""
+					}
+				}
+			} else {
+				logx.Warn("[sps] invalid ogb_target_port=%d, heartbeat skipped", port)
+			}
+		}
+		if !sleepCtx(ctx, time.Duration(interval*float64(time.Second))) {
+			return
+		}
+	}
+}
+
+// ---------------------------------------------------------------- wave test
+
+type waveTestState struct {
+	Active    bool    `json:"active"`
+	Channel   string  `json:"channel"`
+	Strength  int     `json:"strength"`
+	WaveScale float64 `json:"wave_scale"`
+	Preset    any     `json:"preset"`
+}
+
+func (a *App) waveTestActive() bool {
+	a.waveTestMu.Lock()
+	defer a.waveTestMu.Unlock()
+	return a.waveTest.Active
+}
+
+func (a *App) setOSCQueues(on bool) {
+	a.Queue.SetEnabled(queue.OSCInteraction, on)
+	a.Queue.SetEnabled(queue.OSCPanel, on)
+	a.Queue.SetEnabled(queue.Game, on)
+}
+
+func testChannels(ch string) []string {
+	if ch == "AB" {
+		return []string{"A", "B"}
+	}
+	return []string{ch}
+}
+
+// waveTestLoop streams the test wave while active. The test strength is
+// pushed to devices as a temporary limit and never written to settings.
+func (a *App) waveTestLoop(ctx context.Context) {
+	pos := 0.0
+	overriding := false
+	for {
+		a.waveTestMu.Lock()
+		st := a.waveTest
+		a.waveTestMu.Unlock()
+		if st.Active {
+			if !overriding {
+				overriding = true
+				a.Hub.SetSuppressClear(true)
+				a.setOSCQueues(false)
+			}
+			chs := testChannels(st.Channel)
+			l := a.limitsFromSettings()
+			for _, ch := range chs {
+				if ch == "A" {
+					l.LimitA = st.Strength
+				} else {
+					l.LimitB = st.Strength
+				}
+			}
+			a.Hub.RefreshLimits(l)
+			for _, ch := range chs {
+				a.Hub.BroadcastSetStrength(ch, "2", st.Strength, true)
+			}
+			preset := config.Str(st.Preset, "")
+			w := ""
+			if preset != "" && a.Lib.Get(preset) != nil {
+				w = a.Lib.BuildResampledWindow(preset, pos, 10, st.WaveScale, 0, 1)
+				pos += 40
+			}
+			if w == "" {
+				w = wave.ScaleWavestr(config.DefaultShockWave, st.WaveScale)
+			}
+			for _, ch := range chs {
+				a.Queue.PutWave(queue.API, ch, w, "wave_test_loop")
+			}
+			if !sleepCtx(ctx, 900*time.Millisecond) {
+				return
+			}
+			continue
+		}
+		if overriding {
+			overriding = false
+			a.refreshLimits()
+			a.Hub.SetSuppressClear(false)
+			a.setOSCQueues(true)
+		}
+		pos = 0
+		if !sleepCtx(ctx, 100*time.Millisecond) {
+			return
+		}
+	}
+}
+
+// ---------------------------------------------------------------- hot reload
+
+// HotReloadLoop polls config files every second.
+func (a *App) HotReloadLoop(ctx context.Context) {
+	for sleepCtx(ctx, time.Second) {
+		if a.Cfg.Changed() {
+			a.hotReload()
+		}
+	}
+}
+
+func (a *App) hotReload() {
+	adv, basic, err := a.Cfg.LoadFiles()
+	if err != nil {
+		logx.Error("[hot-reload] Failed to reload configuration: %v", err)
+		a.Cfg.UpdateMtimes()
+		return
+	}
+	a.applySettings(adv, basic)
+	a.Cfg.UpdateMtimes()
+}
+
+// applySettings swaps in new trees and restarts only what is needed.
+func (a *App) applySettings(adv, basic config.M) {
+	oldAdv, oldBasic := a.Cfg.Snapshot()
+	engineRestart, wsRestart := false, false
+	if !config.Equal(adv["osc"], oldAdv["osc"]) {
+		engineRestart = true
+	}
+	if !config.Equal(adv["ws"], oldAdv["ws"]) {
+		wsRestart = true
+	}
+	if !config.Equal(adv["SERVER_IP"], oldAdv["SERVER_IP"]) {
+		engineRestart = true
+	}
+	for _, ch := range config.Channels {
+		if !config.Equal(config.Get(basic, "dglab3", ch, "avatar_params"), config.Get(oldBasic, "dglab3", ch, "avatar_params")) ||
+			!config.Equal(config.Get(basic, "dglab3", ch, "mode"), config.Get(oldBasic, "dglab3", ch, "mode")) {
+			engineRestart = true
+		}
+	}
+	if !config.Equal(adv["web_server"], oldAdv["web_server"]) {
+		logx.Warn("[hot-reload] web_server config changed. Full program restart required to apply.")
+		adv["web_server"] = oldAdv["web_server"]
+	}
+	a.Cfg.Replace(adv, basic)
+	a.refreshServerIP()
+	a.applyLogLevel()
+	a.refreshLimits()
+	switch {
+	case wsRestart && !engineRestart:
+		logx.Info("[hot-reload] WS config changed, restarting WS server only...")
+		go a.Engine.RestartWS()
+	case wsRestart && engineRestart:
+		logx.Info("[hot-reload] OSC + WS config changed, full engine restart...")
+		go a.Engine.Restart(false)
+	case engineRestart:
+		logx.Info("[hot-reload] OSC/param config changed, restarting engine (preserving WS connections)...")
+		go a.Engine.Restart(true)
+	}
+	logx.Success("[hot-reload] Configuration reloaded.")
+}

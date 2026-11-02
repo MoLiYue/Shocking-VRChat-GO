@@ -1,0 +1,11 @@
+# runtime data
+settings*.yaml
+profiles/
+recordings/
+curve_config.yaml
+overlimit_rules.yaml
+*.log
+# build
+dist/
+frontend/node_modules/
+*.syso
