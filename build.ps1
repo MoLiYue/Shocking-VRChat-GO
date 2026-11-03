@@ -1,7 +1,7 @@
 # Build on Windows (PowerShell). Requires Go >= 1.22 and Node.js >= 18.
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
-$Version = if ($env:VERSION) { $env:VERSION } else { "0.6.3-go" }
+$Version = if ($env:VERSION) { $env:VERSION } else { "0.7.0" }
 $ldflags = "-s -w -H windowsgui -X shockingvrc/internal/app.Version=$Version"
 
 if ($env:SKIP_FRONTEND -ne "1") {
