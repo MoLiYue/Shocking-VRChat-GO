@@ -514,3 +514,57 @@ func TestParamsSaveKeepsStrengthLimit(t *testing.T) {
 		t.Fatalf("strength_limit changed to %d", v)
 	}
 }
+
+func TestStrengthAPIRespectsLimitAndGuard(t *testing.T) {
+	e := newEnv(t) // limits are 50
+	app := dialMockApp(t, e)
+	master := config.Str(e.a.Cfg.Get("ws", "master_uuid"), "")
+	devID := app.waitFor(func(v map[string]string) bool { return v["type"] == "bind" }, 2*time.Second)["clientId"]
+	app.send(map[string]string{"type": "bind", "clientId": master, "targetId": devID, "message": "DGLAB"})
+	app.send(map[string]string{"type": "msg", "clientId": master, "targetId": devID, "message": "strength-0+0+200+200"})
+	time.Sleep(100 * time.Millisecond)
+	e.getJSON(t, "/api/v1/strength/A/set/200")
+	got := app.waitFor(func(v map[string]string) bool { return strings.HasPrefix(v["message"], "strength-1+2+") }, 2*time.Second)
+	if got["message"] != "strength-1+2+50" {
+		t.Fatalf("set must clamp to limit, got %v", got)
+	}
+
+	// A web page cannot trigger output: cross-site request is rejected.
+	req, _ := http.NewRequest("GET", e.web.URL+"/api/v1/shock/all/5", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatalf("cross-site shock got %d", resp.StatusCode)
+	}
+	// Live websocket from another origin is refused too.
+	h := http.Header{"Origin": []string{"https://evil.example"}}
+	if _, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(e.web.URL, "http")+"/ws/live", h); err == nil {
+		t.Fatal("cross-origin /ws/live accepted")
+	}
+	// ...and the DG-LAB socket server rejects DNS-rebinding Host headers.
+	r2, _ := http.NewRequest("GET", "http://127.0.0.1:"+strconv.Itoa(e.wsPort)+"/x", nil)
+	r2.Host = "evil.example"
+	resp, err = http.DefaultClient.Do(r2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatalf("rebinding on ws port got %d", resp.StatusCode)
+	}
+}
+
+func TestUILocale(t *testing.T) {
+	e := newEnv(t)
+	if e.a.UILocale() != "zh" {
+		t.Fatal("default locale")
+	}
+	e.postJSON(t, "/api/v1/ui/locale", map[string]any{"locale": "en"})
+	if e.a.UILocale() != "en" {
+		t.Fatal("locale not saved")
+	}
+}

@@ -144,6 +144,7 @@ func (e *Engine) startWS() {
 	host := config.Str(a.Cfg.Get("ws", "listen_host"), "0.0.0.0")
 	port := config.Int(a.Cfg.Get("ws", "listen_port"), 28846)
 	s := device.NewV3Server(a.Hub, func() string { return config.Str(a.Cfg.Get("ws", "master_uuid"), "") })
+	s.Middleware = a.Guard.Wrap
 	if err := s.Start(host, port); err != nil {
 		logx.Error("[engine] WS server listen failed, possible port conflict: %v", err)
 		return
@@ -308,8 +309,10 @@ func (a *App) strengthBoostChecker(ctx context.Context) {
 			}
 			a.boostMu.Unlock()
 			if expired {
-				a.Hub.BroadcastSetStrength(ch, "0", v, true)
-				logx.Debug("[strength] channel=%s reverted -%d", ch, v)
+				// Re-apply the configured cap: subtracting the requested
+				// amount would undershoot when the boost was capped.
+				a.refreshLimits()
+				logx.Debug("[strength] channel=%s boost +%d expired, limits re-applied", ch, v)
 			}
 		}
 	}
@@ -543,6 +546,7 @@ func (a *App) applySettings(adv, basic config.M) {
 	a.Cfg.Replace(adv, basic)
 	a.refreshServerIP()
 	a.applyLogLevel()
+	a.refreshAllowedHosts()
 	a.refreshLimits()
 	switch {
 	case wsRestart && !engineRestart:

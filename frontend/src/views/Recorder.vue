@@ -2,7 +2,7 @@
 import { formatTime } from '@/time'
 import { Play, Trash2, Circle, Square } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api, apiPost, apiDelete } from '@/api'
 import { useI18n } from '@/i18n'
 
@@ -113,13 +113,18 @@ function drawWave(canvas: HTMLCanvasElement | null, samples: number[], color: st
 function shortPath(addr: string) { return addr.replace('/avatar/parameters/', '') }
 const timeStr = formatTime
 
-onMounted(() => {
-  loadFiles(); pollStatus(); pollOsc(); pollWave()
+function startPolling() {
+  if (timers.length) return
+  pollStatus(); pollOsc(); pollWave()
   timers.push(window.setInterval(pollStatus, 1000))
   timers.push(window.setInterval(pollOsc, 500))
   timers.push(window.setInterval(pollWave, 250))
-})
-onUnmounted(() => timers.forEach(clearInterval))
+}
+function stopTimers() { timers.forEach(clearInterval); timers.length = 0 }
+onMounted(loadFiles)
+onActivated(startPolling)
+onDeactivated(stopTimers)
+onUnmounted(stopTimers)
 </script>
 
 <template>

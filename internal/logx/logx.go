@@ -81,7 +81,9 @@ var (
 	observer func(Entry)
 )
 
-// SetLevel sets the threshold for stderr and the UI buffer (file is always DEBUG).
+// SetLevel sets the threshold for all sinks. The file additionally keeps
+// INFO and above even when the UI level is stricter (WARNING/ERROR), so
+// the log on disk stays useful; DEBUG reaches the file only when chosen.
 func SetLevel(l Level) {
 	mu.Lock()
 	level = l
@@ -210,7 +212,11 @@ func logf(l Level, format string, args ...any) {
 	full := fmt.Sprintf("%s | %-8s | %s - %s\n", now.Format("2006-01-02 15:04:05.000"), l.String(), where, msg)
 
 	mu.Lock()
-	if file != nil {
+	fileLevel := level
+	if fileLevel > INFO {
+		fileLevel = INFO
+	}
+	if file != nil && l >= fileLevel {
 		n, _ := file.WriteString(full)
 		fileSize += int64(n)
 		if fileSize > rotateBytes {

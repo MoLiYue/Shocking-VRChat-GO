@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw } from 'lucide-vue-next'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 
@@ -103,14 +103,17 @@ function relTime(ts: number) {
   return `${Math.floor(secs / 60)}m`
 }
 
-onMounted(() => {
-  load()
+function stopZones() {
+  if (zoneTimer !== undefined) { window.clearInterval(zoneTimer); zoneTimer = undefined }
+}
+onMounted(load)
+onActivated(() => {
+  if (zoneTimer !== undefined) return
   loadZones()
   zoneTimer = window.setInterval(loadZones, 2000)
 })
-onUnmounted(() => {
-  if (zoneTimer !== undefined) window.clearInterval(zoneTimer)
-})
+onDeactivated(stopZones)
+onUnmounted(stopZones)
 </script>
 
 <template>

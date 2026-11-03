@@ -43,10 +43,18 @@ Windows 10/11 已自带 WebView2 运行时；若缺失，程序会自动改用�
 
 ## 安全说明
 
-Web 管理接口（默认 `0.0.0.0:8800`）与 DG-LAB WS 服务（`0.0.0.0:28846`）**没有身份验证**，与原版一致：
-局域网内任何人都能调用 API 调整强度。V4 中继需要匹配随机 controller id，V3 绑定需要匹配 `master_uuid`。
-如不需要手机以外的设备访问管理页面，可在设置中把 Web 监听地址改为 `127.0.0.1`
+Web 管理接口（默认 `0.0.0.0:8800`）与 DG-LAB WS 服务（`0.0.0.0:28846`）**没有密码**，与原版一致：
+同一局域网内的设备可以直接访问管理页面和 API。V4 中继需要匹配随机 controller id，V3 绑定需要匹配 `master_uuid`。
+如不需要手机以外的设备访问管理页面，可把 Web 监听地址改为 `127.0.0.1`
 （注意 V4 协议复用 Web 端口，改为本机地址后 DG-LAB 4 APP 将无法连接）。
+
+针对浏览器的防护（Go 版新增）：
+
+- **跨站请求拦截**：其他网站的页面不能调用 API 或连接 WebSocket（例如用 `<img>` 触发电击），
+  依据浏览器的 `Sec-Fetch-Site` / `Origin` 判断。DG-LAB APP、脚本、curl 等非浏览器客户端不受影响。
+- **DNS 重绑定防护**：只接受 IP、`localhost` 和本机名作为 Host。如果通过自定义域名访问管理页面，
+  需在 `settings-advanced-v0.2.yaml` 的 `web_server.allowed_hosts` 中添加该域名。
+- **强度接口受上限约束**：`/api/v1/strength/.../set|add` 与 `strength_boost` 不再绕过强度上限。
 
 ## 构建
 

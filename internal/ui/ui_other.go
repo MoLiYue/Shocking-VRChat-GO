@@ -28,8 +28,8 @@ type Options struct {
 // TrayOptions configures the notification-area icon (Windows only).
 type TrayOptions struct {
 	Tooltip   string
-	OpenLabel string
-	QuitLabel string
+	OpenLabel func() string
+	QuitLabel func() string
 	OnOpen    func()
 	OnQuit    func()
 }

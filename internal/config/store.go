@@ -121,6 +121,9 @@ func DefaultAdvanced() M {
 		"web_server": M{
 			"listen_host": "0.0.0.0",
 			"listen_port": 8800,
+			// Extra Host names accepted besides IPs, localhost and this PC's
+			// name (DNS-rebinding protection), e.g. a custom LAN DNS name.
+			"allowed_hosts": []any{},
 		},
 		"log_level": "INFO",
 		"version":   FileVersion,
@@ -133,6 +136,8 @@ func DefaultAdvanced() M {
 			"github_mirror": "",
 			// Windows: closing the window hides it to the tray instead of exiting.
 			"minimize_to_tray": false,
+			// Last UI language, for native strings (tray menu).
+			"ui_locale": "zh",
 		},
 		"chatbox": M{
 			"enabled":           false,

@@ -16,6 +16,7 @@ import (
 	"shockingvrc/internal/device"
 	"shockingvrc/internal/handler"
 	"shockingvrc/internal/logx"
+	"shockingvrc/internal/netguard"
 	"shockingvrc/internal/queue"
 	"shockingvrc/internal/wave"
 )
@@ -24,7 +25,7 @@ import (
 var Version = "0.6.3-go"
 
 // GitHubRepo is the release source for the auto-updater.
-var GitHubRepo = "MoLiYue/Shocking-VRChat"
+var GitHubRepo = "MoLiYue/Shocking-VRChat-GO"
 
 // App is the whole running program.
 type App struct {
@@ -36,6 +37,8 @@ type App struct {
 	V4      *device.V4Relay
 	Live    *LiveHub
 	Engine  *Engine
+	// Guard rejects cross-site and DNS-rebinding requests on both servers.
+	Guard *netguard.Guard
 
 	serverIPMu sync.RWMutex
 	serverIP   string
@@ -99,6 +102,7 @@ func New(baseDir string) *App {
 		rec:                &recorder{},
 		play:               &player{},
 		upd:                newUpdater(),
+		Guard:              netguard.New("web"),
 	}
 	a.waveTest = waveTestState{Channel: "A", Strength: 50, WaveScale: 1.0}
 	a.V4 = device.NewV4Relay(a.Hub, func() bool { return config.Bool(a.Cfg.Get("ws", "v4_enabled"), true) })
@@ -125,6 +129,7 @@ func (a *App) Init() error {
 		return err
 	}
 	a.applyLogLevel()
+	a.refreshAllowedHosts()
 	a.refreshServerIP()
 	a.Lib = wave.NewLibrary(a.Path("wave_presets"))
 	a.refreshLimits()
@@ -132,6 +137,14 @@ func (a *App) Init() error {
 	a.loadOverlimitRules()
 	logx.Success("[init] Config loaded. WS needs external access - allow firewall prompt if shown.")
 	return nil
+}
+
+func (a *App) refreshAllowedHosts() {
+	var hosts []string
+	for _, h := range config.AsList(a.Cfg.Get("web_server", "allowed_hosts")) {
+		hosts = append(hosts, config.Str(h, ""))
+	}
+	a.Guard.SetExtraHosts(hosts)
 }
 
 func (a *App) applyLogLevel() {
@@ -151,6 +164,15 @@ func (a *App) limitsFromSettings() device.Limits {
 }
 
 func (a *App) refreshLimits() { a.Hub.RefreshLimits(a.limitsFromSettings()) }
+
+// UILocale is the language last chosen in the UI ("zh" or "en"), used for
+// native strings such as the tray menu.
+func (a *App) UILocale() string {
+	if config.Str(a.Cfg.Get("general", "ui_locale"), "zh") == "en" {
+		return "en"
+	}
+	return "zh"
+}
 
 // CurrentIP detects the LAN IP by "connecting" a UDP socket.
 func (a *App) CurrentIP() string {

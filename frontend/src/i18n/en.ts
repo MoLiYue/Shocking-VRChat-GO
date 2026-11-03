@@ -148,7 +148,7 @@ export default {
     webHostHint: '0.0.0.0 allows access from other devices.',
     logTitle: 'Logging',
     logLevel: 'Log Level',
-    logLevelHint: 'Use DEBUG for troubleshooting, INFO for daily use.',
+    logLevelHint: 'Use INFO normally. DEBUG writes every OSC message and wave output to the log file; enable only while troubleshooting.',
     githubTitle: 'GitHub Proxy',
     githubMirror: 'Mirror Proxy',
     githubMirrorHint: 'For users in China mainland to speed up update downloads.',

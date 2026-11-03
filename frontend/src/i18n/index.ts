@@ -9,6 +9,14 @@ const messages: Record<Locale, Messages> = { zh, en }
 
 const currentLocale = ref<Locale>((localStorage.getItem('locale') as Locale) || 'zh')
 
+/** Tell the backend so native UI (tray menu) uses the same language. */
+function reportLocale(locale: Locale) {
+  fetch('/api/v1/ui/locale', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locale }),
+  }).catch(() => {})
+}
+reportLocale(currentLocale.value)
+
 export function useI18n() {
   function t(key: string, params?: Record<string, string | number>): string {
     const keys = key.split('.')
@@ -27,6 +35,7 @@ export function useI18n() {
   function setLocale(locale: Locale) {
     currentLocale.value = locale
     localStorage.setItem('locale', locale)
+    reportLocale(locale)
   }
 
   return {

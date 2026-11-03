@@ -188,8 +188,8 @@ func main() {
 		a.TrayAvailable = true
 		ui.StartTray(ui.TrayOptions{
 			Tooltip:   "Shocking VRChat",
-			OpenLabel: "打开管理界面 / Open",
-			QuitLabel: "退出 / Quit",
+			OpenLabel: func() string { return pick(a, "打开管理界面", "Open Shocking VRChat") },
+			QuitLabel: func() string { return pick(a, "退出", "Quit") },
 			OnOpen:    show,
 			OnQuit:    a.Shutdown,
 		})
@@ -211,7 +211,9 @@ func main() {
 			},
 			OnHide: func() {
 				if hintShown.CompareAndSwap(false, true) {
-					ui.TrayNotify("Shocking VRChat", "程序仍在后台运行，点击托盘图标重新打开。\nStill running in the tray.")
+					ui.TrayNotify("Shocking VRChat", pick(a,
+						"程序仍在后台运行，单击托盘图标重新打开。",
+						"Still running in the background. Click the tray icon to reopen."))
 				}
 			},
 		}) {
@@ -266,4 +268,12 @@ func activateRunningInstance(port int) bool {
 		r.Body.Close()
 	}
 	return true
+}
+
+// pick returns the string for the UI language last chosen by the user.
+func pick(a *app.App, zh, en string) string {
+	if a.UILocale() == "en" {
+		return en
+	}
+	return zh
 }

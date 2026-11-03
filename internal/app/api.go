@@ -207,6 +207,23 @@ func (a *App) Handler() http.Handler {
 		}
 		return map[string]any{"success": true}, nil
 	})
+	h("POST /api/v1/ui/locale", func(r *http.Request) (any, error) {
+		data, err := readBody(r)
+		if err != nil {
+			return nil, err
+		}
+		loc := "zh"
+		if config.Str(data["locale"], "") == "en" {
+			loc = "en"
+		}
+		if loc != a.UILocale() {
+			a.Cfg.Write(func(adv, _ config.M) { config.Sub(adv, true, "general")["ui_locale"] = loc })
+			if err := a.Cfg.Save(); err != nil {
+				return nil, err
+			}
+		}
+		return map[string]any{"success": true, "locale": loc}, nil
+	})
 	h("GET /api/v1/logs", func(*http.Request) (any, error) {
 		return map[string]any{"logs": logx.Buffer(200)}, nil
 	})
@@ -275,7 +292,7 @@ func (a *App) Handler() http.Handler {
 		}
 		a.serveSPA(w, r)
 	})
-	return mux
+	return a.Guard.Wrap(mux)
 }
 
 func (a *App) serveSPA(w http.ResponseWriter, r *http.Request) {
@@ -351,8 +368,14 @@ func (a *App) apiStrength(r *http.Request) (any, error) {
 		return nil, httpErr(400, "action must be set/add/sub")
 	}
 	value = config.ClampInt(value, 0, 200)
+	// Never force: "set" is clamped to the effective cap and "add" is
+	// limited to the remaining headroom, exactly like OSC-driven output.
 	for _, ch := range chs {
-		a.Hub.BroadcastSetStrength(ch, mode, value, true)
+		if mode == "2" {
+			a.Hub.BroadcastSetStrength(ch, "2", value, false)
+		} else {
+			a.Hub.BroadcastStrengthAdjust(ch, mode, value)
+		}
 	}
 	return map[string]any{"result": "OK", "action": action, "value": value, "channels": chs}, nil
 }
@@ -378,11 +401,12 @@ func (a *App) apiStrengthBoost(r *http.Request) (any, error) {
 		a.boost[ch] = value
 		a.boostExpire[ch] = time.Now().Add(time.Duration(dur * float64(time.Second)))
 		a.boostMu.Unlock()
-		if already == 0 {
-			a.Hub.BroadcastSetStrength(ch, "1", value, true)
-		} else if already != value {
-			a.Hub.BroadcastSetStrength(ch, "0", already, true)
-			a.Hub.BroadcastSetStrength(ch, "1", value, true)
+		if already != value {
+			if already != 0 {
+				a.refreshLimits()
+			}
+			// Capped at the effective limit (incl. overlimit rules).
+			a.Hub.BroadcastStrengthAdjust(ch, "1", value)
 		}
 	}
 	return map[string]any{"result": "OK", "boost": value, "duration": dur, "channels": chs}, nil

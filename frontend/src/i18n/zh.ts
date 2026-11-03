@@ -148,7 +148,7 @@ export default {
     webHostHint: '0.0.0.0 可从其他设备打开网页。',
     logTitle: '日志',
     logLevel: '日志等级',
-    logLevelHint: 'DEBUG 可用于诊断问题，日常使用 INFO 即可。',
+    logLevelHint: '日常使用 INFO。选 DEBUG 会把每条 OSC 和波形输出都写入日志文件，仅在排查问题时开启。',
     githubTitle: 'GitHub 加速',
     githubMirror: '镜像代理',
     githubMirrorHint: '中国大陆用户建议填写代理地址加速更新下载。',

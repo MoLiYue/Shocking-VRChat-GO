@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Play, Square } from 'lucide-vue-next'
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 
@@ -469,6 +469,17 @@ onMounted(async () => {
   watch(previewCanvasRef, (el) => {
     if (el && resizeObserver) resizeObserver.observe(el)
   }, { immediate: true })
+})
+
+// Kept-alive page: pause the live view while hidden (the test itself
+// keeps running in the backend), resume when shown again.
+let hidden = false
+onDeactivated(() => { hidden = true; if (liveWs || animFrameId) stopPolling() })
+onActivated(async () => {
+  if (!hidden) return
+  hidden = false
+  await loadStatus()
+  if (playing.value && !liveWs) startPolling()
 })
 
 onUnmounted(() => {

@@ -12,9 +12,10 @@ import (
 
 // TrayOptions configures the notification-area icon.
 type TrayOptions struct {
-	Tooltip   string
-	OpenLabel string
-	QuitLabel string
+	Tooltip string
+	// Labels are evaluated each time the menu opens so they follow the UI language.
+	OpenLabel func() string
+	QuitLabel func() string
 	OnOpen    func()
 	OnQuit    func()
 }
@@ -155,8 +156,8 @@ func (t *tray) showMenu() {
 		return
 	}
 	defer pDestroyMenu.Call(menu)
-	open, _ := windows.UTF16PtrFromString(t.opts.OpenLabel)
-	quit, _ := windows.UTF16PtrFromString(t.opts.QuitLabel)
+	open, _ := windows.UTF16PtrFromString(t.opts.OpenLabel())
+	quit, _ := windows.UTF16PtrFromString(t.opts.QuitLabel())
 	_, _, _ = pAppendMenuW.Call(menu, mfString, cmdOpen, uintptr(unsafe.Pointer(open)))
 	_, _, _ = pAppendMenuW.Call(menu, mfSeparator, 0, 0)
 	_, _, _ = pAppendMenuW.Call(menu, mfString, cmdQuit, uintptr(unsafe.Pointer(quit)))

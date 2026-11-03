@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatTime } from '@/time'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api } from '@/api'
 import QrCode from '@/components/QrCode.vue'
 import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp } from 'lucide-vue-next'
@@ -52,8 +52,10 @@ let animId = 0
 let lastFrame = 0
 
 // --- WebSocket-based real-time data ---
+// Pages are kept alive; live work only runs while this page is shown.
+let liveWanted = false
 function connectLiveWs() {
-  if (dashWs) return
+  if (dashWs || !liveWanted) return
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const wsUrl = `${proto}//${location.host}/ws/live`
   dashWs = new WebSocket(wsUrl)
@@ -88,6 +90,7 @@ function connectLiveWs() {
   }
   dashWs.onclose = () => {
     dashWs = null
+    if (!liveWanted) return
     // Reconnect after 2s
     setTimeout(connectLiveWs, 2000)
   }
@@ -95,6 +98,7 @@ function connectLiveWs() {
 }
 
 function disconnectLiveWs() {
+  liveWanted = false
   if (dashWs) { dashWs.close(); dashWs = null }
 }
 
@@ -264,18 +268,26 @@ function barPct(ch: 'A' | 'B') {
 function shortPath(addr: string) { return addr.replace('/avatar/parameters/', '') }
 const timeStr = formatTime
 
-onMounted(() => {
-  pollStatus(); loadQr()
+function startLive() {
+  if (liveWanted) return
+  liveWanted = true
+  pollStatus()
   connectLiveWs()
   startWaveAnim()
   intervals.push(window.setInterval(pollStatus, 5000))
   intervals.push(window.setInterval(updateOscRate, 1000))
-})
-onUnmounted(() => {
+}
+function stopLive() {
   intervals.forEach(clearInterval)
+  intervals.length = 0
   disconnectLiveWs()
   stopWaveAnim()
-})
+}
+
+onMounted(loadQr)
+onActivated(startLive)
+onDeactivated(stopLive)
+onUnmounted(stopLive)
 </script>
 
 <template>

@@ -238,6 +238,8 @@ type V3Server struct {
 	masterUUID func() string
 	srv        *http.Server
 	ln         net.Listener
+	// Middleware wraps the handler (host / origin checks).
+	Middleware func(http.Handler) http.Handler
 	mu         sync.Mutex
 	conns      map[*V3]struct{}
 }
@@ -283,7 +285,11 @@ func (s *V3Server) Start(host string, port int) error {
 		return err
 	}
 	s.ln = ln
-	s.srv = &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second}
+	var h http.Handler = s
+	if s.Middleware != nil {
+		h = s.Middleware(h)
+	}
+	s.srv = &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := s.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logx.Error("[engine] WS server error: %v", err)

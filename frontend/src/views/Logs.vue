@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
 import { api } from '@/api'
 import { useI18n } from '@/i18n'
 
@@ -27,7 +27,9 @@ async function loadInitial() {
   scrollToBottom()
 }
 
+let wanted = false
 function connectWs() {
+  if (ws || !wanted) return
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   ws = new WebSocket(`${proto}//${location.host}/ws/live`)
   ws.onopen = () => { ws!.send(JSON.stringify({ subscribe: ['log'] })) }
@@ -43,7 +45,7 @@ function connectWs() {
       }
     } catch {}
   }
-  ws.onclose = () => { ws = null; setTimeout(connectWs, 2000) }
+  ws.onclose = () => { ws = null; if (wanted) setTimeout(connectWs, 2000) }
   ws.onerror = () => { ws?.close() }
 }
 
@@ -72,8 +74,12 @@ function levelClass(level: string): string {
   return 'log-' + level
 }
 
-onMounted(() => { loadInitial(); connectWs() })
-onUnmounted(() => { if (ws) ws.close() })
+function stopWs() { wanted = false; if (ws) { ws.close(); ws = null } }
+onMounted(loadInitial)
+// Re-sync on return: entries logged while hidden were not streamed.
+onActivated(() => { if (!wanted) { wanted = true; if (logs.value.length) loadInitial(); connectWs() } })
+onDeactivated(stopWs)
+onUnmounted(stopWs)
 </script>
 
 <template>
