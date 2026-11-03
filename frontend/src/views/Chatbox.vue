@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUnsaved } from '@/unsaved'
 import { RotateCcw, Send } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
 import { api, apiPost } from '@/api'
@@ -48,6 +49,8 @@ const previewMessage = computed(() => {
   return msg
 })
 
+const unsaved = useUnsaved(() => ({ enabled: enabled.value, targetHost: targetHost.value, targetPort: targetPort.value, intervalSeconds: intervalSeconds.value, sendNotification: sendNotification.value, triggerSfx: triggerSfx.value, messageTemplate: messageTemplate.value }))
+
 async function load() {
   const data = await api('/api/v1/chatbox')
   enabled.value = data.enabled ?? false
@@ -57,6 +60,7 @@ async function load() {
   sendNotification.value = data.send_notification ?? true
   triggerSfx.value = data.trigger_sfx ?? false
   messageTemplate.value = data.message_template ?? 'Shocking VRChat ⚡ A:{strength_a} B:{strength_b}'
+  unsaved.markClean()
 }
 
 async function save() {
@@ -71,6 +75,7 @@ async function save() {
       message_template: messageTemplate.value,
     })
     if (data.success) {
+      unsaved.markClean()
       msg.value = t('common.saved')
       msgErr.value = false
     } else {
@@ -121,7 +126,7 @@ onMounted(load)
     <section class="card">
       <h2>{{ t('chatbox.enableTitle') }}</h2>
       <label class="toggle-row">
-        <input type="checkbox" v-model="enabled" />
+        <input type="checkbox" class="switch" role="switch" v-model="enabled" />
         <span>{{ enabled ? t('common.enabled') : t('common.disabled') }}</span>
       </label>
     </section>
@@ -177,14 +182,14 @@ onMounted(load)
       </div>
       <div class="field">
         <label class="toggle-row">
-          <input type="checkbox" v-model="sendNotification" />
+          <input type="checkbox" class="switch" role="switch" v-model="sendNotification" />
           <span>{{ t('chatbox.sendNotification') }}</span>
         </label>
         <p class="hint">{{ t('chatbox.sendNotificationHint') }}</p>
       </div>
       <div class="field">
         <label class="toggle-row">
-          <input type="checkbox" v-model="triggerSfx" />
+          <input type="checkbox" class="switch" role="switch" v-model="triggerSfx" />
           <span>{{ t('chatbox.triggerSfx') }}</span>
         </label>
       </div>
@@ -196,6 +201,7 @@ onMounted(load)
       <button class="btn btn-ghost" @click="sendTest"><Send :size="14" />{{ t('chatbox.testSend') }}</button>
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
+      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg" :class="{ err: testMsgErr }">{{ testMsg }}</span>
     </div>
 
@@ -215,12 +221,11 @@ onMounted(load)
 <style scoped>
 .field { margin-bottom: var(--sp-4); }
 .field:last-child { margin-bottom: 0; }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
-.field input { width: 100%; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
+.field input:not(.switch) { width: 100%; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 
 .toggle-row { display: flex; align-items: center; gap: var(--sp-2); cursor: pointer; font-size: var(--text-sm); margin-bottom: 0; }
-.toggle-row input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
 
 .template-input {
   width: 100%;
@@ -271,7 +276,7 @@ onMounted(load)
 .msg { font-size: var(--text-sm); color: var(--success); }
 .msg.err { color: var(--danger); }
 
-.info-card { margin-top: var(--sp-4); font-size: var(--text-sm); color: var(--text-secondary); }
+.info-card { margin-top: var(--sp-4); font-size: var(--text-sm); color: var(--text-label); }
 .info-card h3 { font-size: var(--text-base); margin-bottom: var(--sp-2); color: var(--text); }
 .info-card ul { padding-left: var(--sp-4); }
 .info-card li { margin-bottom: var(--sp-2); line-height: 1.6; }

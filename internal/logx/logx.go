@@ -205,7 +205,8 @@ func logf(l Level, format string, args ...any) {
 	}
 	now := time.Now()
 	where := caller(3)
-	short := fmt.Sprintf("%s | %-8s | %s - %s", now.Format("15:04:05.000"), l.String(), where, msg)
+	// The UI line omits the code location; it is noise for users and stays in the file.
+	short := fmt.Sprintf("%s | %-8s | %s", now.Format("15:04:05.000"), l.String(), msg)
 	full := fmt.Sprintf("%s | %-8s | %s - %s\n", now.Format("2006-01-02 15:04:05.000"), l.String(), where, msg)
 
 	mu.Lock()

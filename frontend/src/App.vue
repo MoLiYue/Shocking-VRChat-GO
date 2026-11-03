@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, type Component } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   LayoutDashboard, SlidersHorizontal, Plug, Gauge, ShieldAlert, Gamepad2, Zap, Ruler, Hand,
   Shuffle, FlaskConical, ScrollText, Disc, MessageSquare, Settings, Languages, Power,
@@ -96,7 +97,28 @@ const statusText = computed(() => {
 })
 const statusKind = computed(() => (!appStatus.reachable ? 'err' : appStatus.devices > 0 ? 'ok' : 'idle'))
 
+// Keyboard shortcuts: Ctrl+S saves the current page, Ctrl+1..9 switch pages.
+const router = useRouter()
+const flatPaths = computed(() => navItems.value.flatMap((i) => (i.children ? i.children : [i])).map((i) => i.path!))
+function onKey(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+  if (document.querySelector('.dlg-backdrop')) return // a dialog owns the keyboard
+  if (e.key === 's' || e.key === 'S') {
+    e.preventDefault()
+    const btn = document.querySelector<HTMLButtonElement>('.main .save-bar .btn-primary:not(:disabled), .main .btn-primary[data-save]:not(:disabled)')
+    btn?.click()
+    return
+  }
+  const n = Number(e.key)
+  if (n >= 1 && n <= 9 && !e.shiftKey) {
+    const path = flatPaths.value[n - 1]
+    if (path) { e.preventDefault(); router.push(path) }
+  }
+}
+onUnmounted(() => window.removeEventListener('keydown', onKey))
+
 onMounted(() => {
+  window.addEventListener('keydown', onKey)
   startStatusPolling()
   // First run (no tour_done in localStorage) auto-starts the onboarding tour.
   start()
@@ -260,6 +282,7 @@ onMounted(() => {
 .nav-link {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   gap: var(--sp-3);
   height: 36px;
   padding: 0 var(--sp-3);

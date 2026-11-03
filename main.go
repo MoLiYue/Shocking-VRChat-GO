@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -115,6 +117,16 @@ func main() {
 
 	host := config.Str(a.Cfg.Get("web_server", "listen_host"), "0.0.0.0")
 	port := config.Int(a.Cfg.Get("web_server", "listen_port"), 8800)
+
+	// Single instance: if we are already running, bring that window forward
+	// and exit instead of failing on the busy port.
+	if os.Getenv("SVRC_RESTART") == "" && activateRunningInstance(port) {
+		logx.Info("[init] Already running; activated the existing window.")
+		logx.Close()
+		return
+	}
+	_ = os.Unsetenv("SVRC_RESTART")
+
 	ln, err := listenWithRetry(net.JoinHostPort(host, strconv.Itoa(port)), 8*time.Second)
 	if err != nil {
 		fatal(base, fmt.Errorf("web server listen on %s:%d failed (port in use?): %w", host, port, err))
@@ -146,6 +158,7 @@ func main() {
 
 	quit := make(chan struct{})
 	a.OnShutdown = func() {
+		ui.StopTray()
 		ui.Close()
 		select {
 		case <-quit:
@@ -163,6 +176,26 @@ func main() {
 
 	url := a.WebURL()
 	autoOpen := config.Bool(a.Cfg.Get("general", "auto_open_qr_web_page"), true)
+
+	windowMode := !*headless && !*browser && ui.Available()
+	show := func() {
+		if !windowMode || !ui.ShowWindow() {
+			_ = ui.OpenBrowser(url)
+		}
+	}
+	a.OnShowWindow = show
+	if !*headless && ui.TrayAvailable() {
+		a.TrayAvailable = true
+		ui.StartTray(ui.TrayOptions{
+			Tooltip:   "Shocking VRChat",
+			OpenLabel: "打开管理界面 / Open",
+			QuitLabel: "退出 / Quit",
+			OnOpen:    show,
+			OnQuit:    a.Shutdown,
+		})
+	}
+	var hintShown atomic.Bool
+
 	switch {
 	case *headless:
 		logx.Success("[init] Open browser: %s", displayURL(a, host, port))
@@ -173,6 +206,14 @@ func main() {
 			URL: url, Title: "Shocking VRChat",
 			Width: 1280, Height: 860, MinWidth: 960, MinHeight: 640,
 			Debug: *devtools, StateFile: filepath.Join(base, "window_state.json"),
+			HideOnClose: func() bool {
+				return a.TrayAvailable && config.Bool(a.Cfg.Get("general", "minimize_to_tray"), false)
+			},
+			OnHide: func() {
+				if hintShown.CompareAndSwap(false, true) {
+					ui.TrayNotify("Shocking VRChat", "程序仍在后台运行，点击托盘图标重新打开。\nStill running in the tray.")
+				}
+			},
 		}) {
 			logx.Info("[ui] Window closed.")
 			a.Shutdown()
@@ -202,4 +243,27 @@ func displayURL(a *app.App, host string, port int) string {
 		host = a.CurrentIP()
 	}
 	return fmt.Sprintf("http://%s:%d", host, port)
+}
+
+// activateRunningInstance asks an already running copy (same web port) to
+// show its window. Returns true if one answered.
+func activateRunningInstance(port int) bool {
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	c := &http.Client{Timeout: 1500 * time.Millisecond}
+	resp, err := c.Get(base + "/api/v1/status")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var st struct {
+		Healthy string `json:"healthy"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&st) != nil || st.Healthy != "ok" {
+		return false
+	}
+	ui.AllowForeground()
+	if r, err := c.Post(base+"/api/v1/ui/show", "application/json", nil); err == nil {
+		r.Body.Close()
+	}
+	return true
 }

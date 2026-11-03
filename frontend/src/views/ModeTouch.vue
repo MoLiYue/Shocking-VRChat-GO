@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUnsaved } from '@/unsaved'
 import { RotateCcw } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
 import { api, apiPost } from '@/api'
@@ -39,6 +40,8 @@ async function loadPresets() {
   presets.value = data.presets || []
 }
 
+const unsaved = useUnsaved(() => ({ ch: ch.value, wavePreset: wavePreset.value, waveScale: waveScale.value, nDerivative: nDerivative.value, textureFloor: textureFloor.value, windowOps: windowOps.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+
 async function load() {
   const data = await api(`/api/v1/mode_config/${ch.value}/touch`)
   const cfg = data.config || {}
@@ -52,6 +55,7 @@ async function load() {
   envelopeCurve.value = cfg.wave_envelope_curve || 'smoothstep'
   triggerBottom.value = data.trigger_range?.bottom ?? 0
   triggerTop.value = data.trigger_range?.top ?? 0.8
+  unsaved.markClean()
 }
 
 async function save() {
@@ -68,9 +72,13 @@ async function save() {
   })
   msg.value = data.success ? t('common.saved') : t('common.saveFailed')
   setTimeout(() => msg.value = '', 3000)
+  if (data.success) unsaved.markClean()
 }
 
-function switchCh(c: 'a' | 'b') { ch.value = c; load() }
+async function switchCh(c: 'a' | 'b') {
+  if (c === ch.value || !(await unsaved.confirmDiscard())) return
+  ch.value = c; load()
+}
 onMounted(() => { loadPresets(); load() })
 </script>
 
@@ -182,6 +190,7 @@ onMounted(() => { loadPresets(); load() })
     <div class="save-bar sticky">
       <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
+      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg">{{ msg }}</span>
     </div>
   </div>
@@ -193,7 +202,7 @@ onMounted(() => { loadPresets(); load() })
 .ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
 .field select { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }

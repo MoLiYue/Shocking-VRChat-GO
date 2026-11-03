@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatTime } from '@/time'
 import { Play, Trash2, Circle, Square } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
 import { ref, onMounted, onUnmounted } from 'vue'
@@ -110,7 +111,7 @@ function drawWave(canvas: HTMLCanvasElement | null, samples: number[], color: st
 }
 
 function shortPath(addr: string) { return addr.replace('/avatar/parameters/', '') }
-function timeStr(ts: number) { return new Date(ts * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) }
+const timeStr = formatTime
 
 onMounted(() => {
   loadFiles(); pollStatus(); pollOsc(); pollWave()
@@ -148,7 +149,7 @@ onUnmounted(() => timers.forEach(clearInterval))
         </div>
         <label>{{ t('recorder.speed') }}: {{ speed.toFixed(2) }}x</label>
         <input type="range" v-model.number="speed" min="0.25" max="3" step="0.25">
-        <label><input type="checkbox" v-model="loop"> {{ t('recorder.loopPlayback') }}</label>
+        <label class="toggle-row"><input type="checkbox" class="switch" role="switch" v-model="loop"><span>{{ t('recorder.loopPlayback') }}</span></label>
         <div class="actions">
           <button class="btn btn-ghost" :disabled="!playActive" @click="stopPlay"><Square :size="12" fill="currentColor" />{{ t('recorder.stopPlayback') }}</button>
         </div>
@@ -241,8 +242,8 @@ label { display: block; font-size: var(--text-xs); color: var(--text-muted); mar
 .osc-row { display: flex; gap: var(--sp-2); align-items: center; padding: var(--sp-1) var(--sp-2); font-size: var(--text-xs); border-radius: var(--radius-sm); }
 .osc-row:hover { background: rgba(139,92,246,0.04); }
 .badge { padding: 2px 6px; border-radius: var(--radius-sm); font-weight: 700; font-size: 10px; }
-.b-a { background: rgba(52,211,153,0.12); color: var(--success); }
-.b-b { background: rgba(96,165,250,0.12); color: var(--info); }
+.b-a { background: var(--ch-a-surface); color: var(--ch-a-color); }
+.b-b { background: var(--ch-b-surface); color: var(--ch-b-color); }
 .osc-mode { color: var(--warning); min-width: 44px; }
 .osc-path { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .osc-val { color: var(--accent-2); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }

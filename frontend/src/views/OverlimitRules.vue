@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUnsaved } from '@/unsaved'
 import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
@@ -25,10 +26,13 @@ const msgType = ref<'ok' | 'err'>('ok')
 
 const operators = ['==', '!=', '>', '<', '>=', '<=']
 
+const unsaved = useUnsaved(() => ({ rules: rules.value }))
+
 async function load() {
   const data = await api('/api/v1/overlimit_rules')
   rules.value = data.rules || []
   effective.value = data.effective || { A: 0, B: 0 }
+  unsaved.markClean()
 }
 
 function addRule() {
@@ -56,6 +60,7 @@ async function save() {
     msgType.value = 'err'
   }
   setTimeout(() => msg.value = '', 3000)
+  if (data.success) unsaved.markClean()
 }
 
 async function removeRule(index: number) {
@@ -97,7 +102,7 @@ onMounted(load)
         <div class="rule-header">
           <input type="text" v-model="rule.name" class="rule-name" :placeholder="t('overlimit.ruleName')">
           <label class="toggle">
-            <input type="checkbox" v-model="rule.enabled">
+            <input type="checkbox" class="switch" role="switch" v-model="rule.enabled">
             <span class="toggle-label">{{ rule.enabled ? t('common.enable') : t('common.disable') }}</span>
           </label>
           <div class="rule-actions">
@@ -138,6 +143,7 @@ onMounted(load)
       <button class="btn btn-ghost" @click="addRule"><Plus :size="15" />{{ t('overlimit.addRule') }}</button>
       <button class="btn btn-primary" @click="save">{{ t('overlimit.saveAll') }}</button>
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('overlimit.reloadAll') }}</button>
+      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg" :class="{ ok: msgType === 'ok', err: msgType === 'err' }">{{ msg }}</span>
     </div>
 
@@ -171,7 +177,6 @@ onMounted(load)
 .rule-header { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
 .rule-name { flex: 1; font-weight: 600; font-size: var(--text-sm); }
 .toggle { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-xs); color: var(--text-muted); cursor: pointer; white-space: nowrap; }
-.toggle input[type="checkbox"] { accent-color: var(--accent); }
 .toggle-label { user-select: none; }
 .rule-actions { display: flex; gap: var(--sp-1); }
 .rule-body { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -186,7 +191,7 @@ onMounted(load)
 .msg { font-size: var(--text-sm); color: var(--text-muted); }
 .msg.ok { color: var(--success); }
 .msg.err { color: var(--danger); }
-.info-card { font-size: var(--text-sm); color: var(--text-secondary); }
+.info-card { font-size: var(--text-sm); color: var(--text-label); }
 .info-card h3 { font-size: var(--text-base); margin-bottom: var(--sp-2); color: var(--text); }
 .info-card ul { padding-left: var(--sp-4); }
 .info-card li { margin-bottom: var(--sp-2); line-height: 1.6; }

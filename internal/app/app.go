@@ -74,6 +74,10 @@ type App struct {
 	shutdownOnce sync.Once
 	// Packaged reports whether we run as a distributed binary (enables update).
 	Packaged bool
+	// TrayAvailable is reported to the UI so it can offer minimize-to-tray.
+	TrayAvailable bool
+	// OnShowWindow brings the UI to the front (second instance / tray).
+	OnShowWindow func()
 }
 
 // New constructs the application rooted at baseDir.
@@ -221,6 +225,9 @@ func (a *App) RestartProcess() {
 		return
 	}
 	a.Engine.Stop(false)
+	// Tell the new process it replaces us, so the single-instance check
+	// does not hand control back to this (exiting) process.
+	_ = os.Setenv("SVRC_RESTART", "1")
 	if err := spawnDetached(exe, os.Args[1:]); err != nil {
 		logx.Error("[restart] spawn failed: %v", err)
 		return

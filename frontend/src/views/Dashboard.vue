@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { confirmDialog } from '@/dialog'
+import { formatTime } from '@/time'
 import { ref, onMounted, onUnmounted } from 'vue'
-import { api, apiPost, apiDelete, apiPut } from '@/api'
+import { api } from '@/api'
 import QrCode from '@/components/QrCode.vue'
-import { Radio, Clock, Play, Trash2 } from 'lucide-vue-next'
+import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp } from 'lucide-vue-next'
+import { toast } from '@/dialog'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
@@ -18,18 +19,23 @@ const lastTrigger = ref('-')
 const oscEvents = ref<any[]>([])
 const canvasARef = ref<HTMLCanvasElement | null>(null)
 const canvasBRef = ref<HTMLCanvasElement | null>(null)
+// Function ref: string refs inside v-for would collect into arrays.
+function setCanvas(ch: 'A' | 'B', el: unknown) {
+  ;(ch === 'A' ? canvasARef : canvasBRef).value = (el as HTMLCanvasElement) || null
+}
 const qrContent = ref('')
-const logs = ref<{text: string; level: string}[]>([])
 
 // V4 QR
 const qrContentV4 = ref('')
 const v4Enabled = ref(true)
 const qrMode = ref<'v3' | 'v4'>('v4')  // Default to V4
-// Profiles
-const profiles = ref<string[]>([])
-const profileName = ref('')
-const profileMsg = ref('')
-
+// Once a device is connected the QR is no longer needed: keep it folded
+// unless the user explicitly opens it.
+const qrExpanded = ref(false)
+const configLimit = ref<{ A: number | string; B: number | string }>({ A: '-', B: '-' })
+// OSC messages per second (rolling 3s window, from the live feed)
+const oscStamps: number[] = []
+const oscRate = ref(0)
 let intervals: number[] = []
 let dashWs: WebSocket | null = null
 
@@ -62,6 +68,7 @@ function connectLiveWs() {
       } else if (msg.topic === 'wave_B' && msg.samples) {
         pendingB.push(...msg.samples)
       } else if (msg.topic === 'osc' && msg.event) {
+        oscStamps.push(Date.now())
         oscEvents.value.unshift(msg.event)
         if (oscEvents.value.length > 20) oscEvents.value = oscEvents.value.slice(0, 20)
         lastTrigger.value = t('dashboard.justNow')
@@ -107,6 +114,10 @@ async function pollStatus() {
       }
     }
     oscStatus.value = data.osc_listening || ''
+    try {
+      const l = await api('/api/v1/strength_limit')
+      configLimit.value = { A: l.channel_a ?? '-', B: l.channel_b ?? '-' }
+    } catch {}
     if (data.last_osc_time) {
       const ago = Math.round(Date.now() / 1000 - data.last_osc_time)
       lastTrigger.value = ago < 2 ? t('dashboard.justNow') : `${ago}s`
@@ -114,7 +125,9 @@ async function pollStatus() {
   } catch { connected.value = false }
 }
 
-function drawWaveCanvas(canvas: HTMLCanvasElement | null, buffer: {s: number; f: number}[]) {
+const CH_RGB = { A: [167, 139, 250], B: [34, 211, 238] } as const
+
+function drawWaveCanvas(canvas: HTMLCanvasElement | null, buffer: {s: number; f: number}[], ch: 'A' | 'B') {
   if (!canvas) return
   const dpr = window.devicePixelRatio || 1
   const W = canvas.clientWidth
@@ -151,11 +164,10 @@ function drawWaveCanvas(canvas: HTMLCanvasElement | null, buffer: {s: number; f:
     const barH = (sample.s / 100) * H
     const x = xBase + i * slotW + (slotW - barW) / 2
 
-    const freqT = 1 - (sample.f - 10) / 230
-    const r = Math.round(139 + (1 - freqT) * 100)
-    const g = Math.round(92 * freqT)
-    const b = Math.round(246 * freqT + 100 * (1 - freqT))
-    ctx.fillStyle = `rgba(${r},${g},${b},0.85)`
+    // High frequency (short interval) = bright, low frequency = dimmer
+    const freqT = Math.max(0, Math.min(1, 1 - (sample.f - 10) / 230))
+    const [r, g, b] = CH_RGB[ch]
+    ctx.fillStyle = `rgba(${r},${g},${b},${0.45 + 0.45 * freqT})`
     ctx.fillRect(x, H - barH, Math.max(barW, 0.5), barH)
   }
 }
@@ -199,8 +211,8 @@ function meterAndDraw(now: number) {
     if (bufferB.length > DISPLAY_SLOTS * 2) bufferB = bufferB.slice(-DISPLAY_SLOTS * 2)
   }
   lastFrame = now
-  drawWaveCanvas(canvasARef.value, bufferA)
-  drawWaveCanvas(canvasBRef.value, bufferB)
+  drawWaveCanvas(canvasARef.value, bufferA, 'A')
+  drawWaveCanvas(canvasBRef.value, bufferB, 'B')
   animId = requestAnimationFrame(meterAndDraw)
 }
 
@@ -212,35 +224,6 @@ function stopWaveAnim() {
   lastFrame = 0
 }
 
-// Profiles
-function addLog(msg: string, level = '') {
-  logs.value.unshift({ text: `[${new Date().toLocaleTimeString()}] ${msg}`, level })
-  if (logs.value.length > 80) logs.value.pop()
-}
-
-async function loadProfiles() {
-  const data = await api('/api/v1/profiles')
-  profiles.value = data.profiles || []
-}
-
-async function saveProfile() {
-  if (!profileName.value.trim()) return
-  const data = await apiPut(`/api/v1/profiles/${encodeURIComponent(profileName.value)}`)
-  if (data.success) { profileMsg.value = t('dashboard.profileSaved'); profileName.value = ''; loadProfiles() }
-  else profileMsg.value = data.message || t('dashboard.profileFailed')
-  setTimeout(() => profileMsg.value = '', 3000)
-}
-
-async function loadProfile(name: string) {
-  const data = await apiPost(`/api/v1/profiles/${encodeURIComponent(name)}`)
-  if (data.success) addLog(t('dashboard.profileSwitched', { name }))
-}
-
-async function deleteProfile(name: string) {
-  if (!(await confirmDialog({ message: t('dashboard.profileDeleteConfirm', { name }), danger: true }))) return
-  await apiDelete(`/api/v1/profiles/${encodeURIComponent(name)}`)
-  loadProfiles()
-}
 
 // QR
 async function loadQr() {
@@ -255,18 +238,38 @@ async function loadQr() {
   } catch {}
 }
 
+function updateOscRate() {
+  const cutoff = Date.now() - 3000
+  while (oscStamps.length && oscStamps[0] < cutoff) oscStamps.shift()
+  oscRate.value = Math.round(oscStamps.length / 3)
+}
+
+async function copyQr() {
+  const text = qrMode.value === 'v4' ? qrContentV4.value : qrContent.value
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Clipboard API can be unavailable on plain-http LAN origins
+    const ta = document.createElement('textarea')
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove()
+  }
+  toast(t('dashboard.copied'), 'success')
+}
+
 // Helpers
 function barPct(ch: 'A' | 'B') {
   return Math.min(strength.value[ch] / 200 * 100, 100)
 }
 function shortPath(addr: string) { return addr.replace('/avatar/parameters/', '') }
-function timeStr(ts: number) { return new Date(ts * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) }
+const timeStr = formatTime
 
 onMounted(() => {
-  pollStatus(); loadProfiles(); loadQr()
+  pollStatus(); loadQr()
   connectLiveWs()
   startWaveAnim()
   intervals.push(window.setInterval(pollStatus, 5000))
+  intervals.push(window.setInterval(updateOscRate, 1000))
 })
 onUnmounted(() => {
   intervals.forEach(clearInterval)
@@ -277,34 +280,48 @@ onUnmounted(() => {
 
 <template>
   <div class="dashboard">
-    <!-- Stats row -->
+    <!-- Stats row: OSC input, last trigger, configured limits (device state lives in the sidebar + output card) -->
     <div class="stats-row">
-      <div class="stat-card" :class="connected ? 'stat-on' : ''" data-tour="dashboard-status">
-        <span class="stat-dot" :class="connected ? 'on' : ''"></span>
-        <div>
-          <div class="stat-val">{{ connected ? t('dashboard.deviceCount', { count: deviceCount }) : t('dashboard.disconnected') }}</div>
-          <div class="stat-sub">{{ t('dashboard.deviceStatus') }}</div>
-        </div>
-      </div>
       <div class="stat-card">
         <Radio class="stat-icon" :size="20" :stroke-width="1.75" />
-        <div><div class="stat-val">{{ oscStatus || '-' }}</div><div class="stat-sub">OSC</div></div>
+        <div>
+          <div class="stat-val">{{ oscStatus || '-' }}</div>
+          <div class="stat-sub">OSC · {{ t('dashboard.oscRate', { n: oscRate }) }}</div>
+        </div>
       </div>
       <div class="stat-card">
         <Clock class="stat-icon" :size="20" :stroke-width="1.75" />
         <div><div class="stat-val">{{ lastTrigger }}</div><div class="stat-sub">{{ t('dashboard.lastTrigger') }}</div></div>
       </div>
+      <router-link to="/strength" class="stat-card stat-link">
+        <Gauge class="stat-icon" :size="20" :stroke-width="1.75" />
+        <div>
+          <div class="stat-val">
+            <span class="ch-a-text">A {{ configLimit.A }}</span><span class="stat-sep">·</span><span class="ch-b-text">B {{ configLimit.B }}</span>
+          </div>
+          <div class="stat-sub">{{ t('dashboard.limits') }}</div>
+        </div>
+      </router-link>
     </div>
 
     <div class="grid-2">
       <!-- Left column -->
       <div class="col">
-        <!-- Channels -->
-        <section class="card">
-          <h2>{{ t('dashboard.deviceStatus') }}</h2>
-          <div class="ch-row" v-for="ch in (['A', 'B'] as const)" :key="ch">
-            <div class="ch-head"><span class="ch-name">{{ ch }}</span><strong>{{ strength[ch] }} / 200</strong></div>
-            <div class="bar-track"><div class="bar-fill" :class="'bar-' + ch.toLowerCase()" :style="{width: barPct(ch) + '%'}"></div></div>
+        <!-- Per-channel output: strength + live waveform together -->
+        <section class="card" data-tour="dashboard-status">
+          <div class="card-head">
+            <h2>{{ t('dashboard.channelOutput') }}</h2>
+            <span class="conn-pill" :class="{ on: connected }">
+              <span class="dot" />{{ connected ? t('dashboard.deviceCount', { count: deviceCount }) : t('dashboard.disconnected') }}
+            </span>
+          </div>
+          <div class="out-row" v-for="ch in (['A', 'B'] as const)" :key="ch" :class="'ch-' + ch.toLowerCase()">
+            <div class="out-head">
+              <span class="ch-tag">{{ ch }}</span>
+              <div class="bar-track"><div class="bar-fill" :style="{ width: barPct(ch) + '%' }"></div></div>
+              <span class="out-val"><strong>{{ strength[ch] }}</strong> / 200</span>
+            </div>
+            <canvas :ref="(el) => setCanvas(ch, el)" class="wave-canvas"></canvas>
           </div>
         </section>
 
@@ -312,76 +329,47 @@ onUnmounted(() => {
         <section class="card">
           <h2>{{ t('dashboard.oscEvents') }}</h2>
           <div class="osc-feed">
-            <div class="osc-row" v-for="(e, i) in oscEvents" :key="i">
-              <span class="badge" :class="'b-' + e.channel.toLowerCase()">{{ e.channel }}</span>
-              <span class="osc-mode">{{ e.mode }}</span>
+            <div class="osc-row" v-for="(e, i) in oscEvents.slice(0, 8)" :key="i">
+              <span class="ch-tag sm" :class="'ch-' + e.channel.toLowerCase()">{{ e.channel }}</span>
               <span class="osc-path">{{ shortPath(e.address) }}</span>
+              <span class="osc-mode">{{ e.mode }}</span>
               <span class="osc-val">{{ e.value }}</span>
               <span class="osc-time">{{ timeStr(e.time) }}</span>
             </div>
             <div v-if="!oscEvents.length" class="empty">{{ t('dashboard.noEvents') }}</div>
           </div>
         </section>
-
-        <!-- Wave visualization -->
-        <section class="card">
-          <h2>{{ t('dashboard.waveform') }}</h2>
-          <div class="wave-dual">
-            <div class="wave-channel">
-              <div class="wave-ch-label">A</div>
-              <canvas ref="canvasARef" class="wave-canvas"></canvas>
-            </div>
-            <div class="wave-channel">
-              <div class="wave-ch-label">B</div>
-              <canvas ref="canvasBRef" class="wave-canvas"></canvas>
-            </div>
-          </div>
-        </section>
-
-        <!-- Logs -->
-        <section class="card">
-          <h2>{{ t('dashboard.logs') }}</h2>
-          <div class="log-area">
-            <div v-for="(l, i) in logs" :key="i" class="log-line" :class="l.level">{{ l.text }}</div>
-            <div v-if="!logs.length" class="empty">{{ t('dashboard.noLogs') }}</div>
-          </div>
-        </section>
       </div>
 
       <!-- Right column -->
       <div class="col">
-        <!-- QR -->
-        <section class="card">
-          <h2>{{ t('dashboard.qrTitle') }}</h2>
-          <div class="qr-tabs">
-            <button class="qr-tab" :class="{ active: qrMode === 'v4' }" @click="qrMode = 'v4'" v-if="v4Enabled">V4</button>
-            <button class="qr-tab" :class="{ active: qrMode === 'v3' }" @click="qrMode = 'v3'">V3</button>
+        <section class="card" data-tour="qr-code">
+          <div class="card-head">
+            <h2>{{ t('dashboard.qrTitle') }}</h2>
+            <button v-if="connected && qrExpanded" class="icon-action" :title="t('dashboard.hideQr')" :aria-label="t('dashboard.hideQr')" @click="qrExpanded = false">
+              <ChevronUp :size="16" />
+            </button>
           </div>
-          <div class="qr-badge" :class="qrMode">{{ qrMode === 'v4' ? t('dashboard.qrV4Badge') : t('dashboard.qrV3Badge') }}</div>
-          <div data-tour="qr-code">
-            <QrCode :content="qrMode === 'v4' ? qrContentV4 : qrContent" :size="240" />
-          </div>
-          <div class="qr-text">{{ qrMode === 'v4' ? qrContentV4 : qrContent }}</div>
-          <div class="qr-hint" v-if="qrMode === 'v4'">{{ t('dashboard.qrV4Hint') }}</div>
-          <div class="qr-hint" v-else>{{ t('dashboard.qrV3Hint') }}</div>
-        </section>
 
-        <!-- Profiles -->
-        <section class="card">
-          <h2>{{ t('dashboard.profiles') }}</h2>
-          <div class="profile-list">
-            <div class="profile-item" v-for="p in profiles" :key="p">
-              <span class="profile-name">{{ p }}</span>
-              <button class="icon-action success" :title="t('common.load')" :aria-label="t('common.load')" @click="loadProfile(p)"><Play :size="15" /></button>
-              <button class="icon-action danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click="deleteProfile(p)"><Trash2 :size="15" /></button>
+          <div v-if="connected && !qrExpanded" class="qr-folded">
+            <p>{{ t('dashboard.qrConnected') }}</p>
+            <button class="btn btn-ghost btn-sm" @click="qrExpanded = true"><QrIcon :size="14" />{{ t('dashboard.showQr') }}</button>
+          </div>
+
+          <template v-else>
+            <div class="qr-tabs">
+              <button class="qr-tab" :class="{ active: qrMode === 'v4' }" @click="qrMode = 'v4'" v-if="v4Enabled">V4</button>
+              <button class="qr-tab" :class="{ active: qrMode === 'v3' }" @click="qrMode = 'v3'">V3</button>
+              <span class="qr-badge" :class="qrMode">{{ qrMode === 'v4' ? t('dashboard.qrV4Badge') : t('dashboard.qrV3Badge') }}</span>
             </div>
-            <div v-if="!profiles.length" class="empty">{{ t('dashboard.noProfiles') }}</div>
-          </div>
-          <div class="profile-add">
-            <input type="text" v-model="profileName" :placeholder="t('dashboard.newProfileName')" @keyup.enter="saveProfile">
-            <button class="btn btn-primary" @click="saveProfile">{{ t('dashboard.saveCurrent') }}</button>
-          </div>
-          <div v-if="profileMsg" class="profile-msg">{{ profileMsg }}</div>
+            <QrCode :content="qrMode === 'v4' ? qrContentV4 : qrContent" :size="240" />
+            <div class="qr-foot">
+              <span class="qr-hint">{{ qrMode === 'v4' ? t('dashboard.qrV4Hint') : t('dashboard.qrV3Hint') }}</span>
+              <button class="btn btn-ghost btn-sm" :title="qrMode === 'v4' ? qrContentV4 : qrContent" @click="copyQr">
+                <Copy :size="13" />{{ t('dashboard.copyLink') }}
+              </button>
+            </div>
+          </template>
         </section>
       </div>
     </div>
@@ -394,94 +382,69 @@ onUnmounted(() => {
 .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
 .stat-card {
   display: flex; align-items: center; gap: var(--sp-4);
-  padding: var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
+  color: var(--text);
+  text-decoration: none;
   transition: var(--transition-props);
 }
-.stat-card.stat-on { border-color: rgba(52, 211, 153, 0.3); box-shadow: 0 0 20px rgba(52,211,153,0.08); }
-.stat-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); transition: var(--transition-props); }
-.stat-dot.on { background: var(--success); box-shadow: 0 0 12px rgba(52,211,153,0.6); animation: pulse 2s infinite; }
-@keyframes pulse { 0%,100% { box-shadow: 0 0 12px rgba(52,211,153,0.6); } 50% { box-shadow: 0 0 20px rgba(52,211,153,0.3); } }
+.stat-link:hover { border-color: var(--border-hover); background: var(--bg-card-hover); text-decoration: none; }
 .stat-icon { color: var(--text-secondary); flex-shrink: 0; }
-.stat-val { font-size: var(--text-base); font-weight: 600; }
+.stat-val { font-size: var(--text-base); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-sep { margin: 0 var(--sp-2); color: var(--text-muted); }
 .stat-sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
 
-.grid-2 { display: grid; grid-template-columns: 1.3fr 0.7fr; gap: var(--sp-5); }
-.col { display: flex; flex-direction: column; gap: var(--sp-4); }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--sp-5); align-items: start; }
+.col { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 
-/* Channels */
-.ch-row { margin-bottom: var(--sp-2); }
-.ch-row:last-child { margin-bottom: 0; }
-.ch-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--sp-1); font-size: var(--text-sm); }
-.ch-name { font-weight: 700; font-size: var(--text-base); background: var(--gradient-text); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.bar-track { height: 5px; background: rgba(139,92,246,0.1); border-radius: var(--radius-full); overflow: hidden; }
-.bar-fill { height: 100%; border-radius: var(--radius-full); transition: width 200ms linear; }
-.bar-a { background: linear-gradient(90deg, #34d399, #6ee7b7); box-shadow: 0 0 8px rgba(52,211,153,0.3); }
-.bar-b { background: linear-gradient(90deg, #60a5fa, #93c5fd); box-shadow: 0 0 8px rgba(96,165,250,0.3); }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.card-head h2 { margin: 0; }
+
+.conn-pill { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-muted); }
+.conn-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.conn-pill.on { color: var(--success); }
+.conn-pill.on .dot { background: var(--success); box-shadow: 0 0 0 3px var(--success-surface); }
+
+/* Channel output */
+.out-row + .out-row { margin-top: var(--sp-4); }
+.out-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.bar-track { flex: 1; height: 6px; background: rgba(139, 92, 246, 0.1); border-radius: var(--radius-full); overflow: hidden; }
+.bar-fill { height: 100%; border-radius: var(--radius-full); background: var(--ch-color); transition: width 200ms linear; }
+.out-val { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
+.out-val strong { color: var(--text); }
+.wave-canvas { width: 100%; height: 72px; border-radius: var(--radius-md); display: block; }
 
 /* OSC feed */
-.osc-feed { max-height: 220px; overflow-y: auto; }
+.osc-feed { display: flex; flex-direction: column; gap: 2px; }
 .osc-row {
-  display: flex; gap: var(--sp-2); align-items: center;
-  padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm);
+  display: flex; gap: var(--sp-3); align-items: center;
+  padding: 6px var(--sp-2); border-radius: var(--radius-sm);
   font-size: var(--text-xs); font-family: var(--font-mono);
-  transition: background var(--transition);
 }
-.osc-row:hover { background: rgba(139,92,246,0.05); }
-.badge { padding: 2px 7px; border-radius: var(--radius-sm); font-weight: 700; font-size: 10px; }
-.b-a { background: rgba(52,211,153,0.12); color: var(--success); }
-.b-b { background: rgba(96,165,250,0.12); color: var(--info); }
-.osc-mode { color: var(--warning); min-width: 48px; }
-.osc-path { flex: 1; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.osc-val { color: var(--accent-2); min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
-.osc-time { color: var(--text-muted); min-width: 52px; text-align: right; }
+.osc-row:hover { background: var(--bg-hover); }
+.osc-path { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.osc-mode { color: var(--text-muted); }
+.osc-val { color: var(--text); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.osc-time { color: var(--text-muted); min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* QR */
-.qr-tabs { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); }
-.qr-tab { padding: var(--sp-2) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-xs); font-weight: 600; transition: var(--transition-props); }
-.qr-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.1); }
+.qr-tabs { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.qr-tab { padding: var(--sp-1) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-xs); font-weight: 600; transition: var(--transition-props); }
+.qr-tab.active { border-color: var(--accent); color: var(--text); background: var(--bg-active); }
 .qr-tab:hover { border-color: var(--border-hover); color: var(--text); }
-.qr-badge { display: inline-block; padding: 2px 10px; border-radius: var(--radius-full); font-size: 10px; font-weight: 700; margin-bottom: var(--sp-3); }
-.qr-badge.v4 { background: rgba(52,211,153,0.12); color: var(--success); }
-.qr-badge.v3 { background: rgba(96,165,250,0.12); color: var(--info); }
-.qr-text { margin-top: var(--sp-3); font-size: var(--text-xs); font-family: var(--font); color: var(--text-muted); word-break: break-all; padding: var(--sp-2) var(--sp-3); background: rgba(139,92,246,0.05); border-radius: var(--radius-sm); }
-.qr-hint { margin-top: var(--sp-2); font-size: 11px; color: var(--text-muted); font-style: italic; }
+.qr-badge { margin-left: auto; padding: 2px 8px; border-radius: var(--radius-full); font-size: 11px; font-weight: 600; }
+.qr-badge.v4 { background: var(--success-surface); color: var(--success); }
+.qr-badge.v3 { background: var(--info-surface); color: var(--info); }
+.qr-foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-1); }
+.qr-hint { font-size: var(--text-xs); color: var(--text-muted); }
+.qr-folded { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); color: var(--text-muted); font-size: var(--text-sm); }
 
-/* Wave */
-.wave-dual { display: flex; flex-direction: column; gap: var(--sp-2); }
-.wave-channel { display: flex; align-items: stretch; gap: var(--sp-2); }
-.wave-ch-label { display: flex; align-items: center; justify-content: center; width: 24px; font-size: var(--text-xs); font-weight: 600; color: var(--accent); opacity: 0.7; }
-.wave-canvas { width: 100%; height: 80px; border-radius: var(--radius-md); display: block; }
-
-/* Controls */
-.form-field { margin-bottom: var(--sp-4); }
-.form-field label { display: block; font-size: var(--text-xs); color: var(--text-muted); margin-bottom: var(--sp-2); font-weight: 500; }
-.form-field select { width: 100%; }
-.btn-group { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-
-/* Wave preview */
-.preview-info { font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: var(--sp-3); padding: var(--sp-2) var(--sp-3); background: rgba(139,92,246,0.05); border-radius: var(--radius-sm); }
-
-/* Profiles */
-.profile-list { max-height: 140px; overflow-y: auto; margin-bottom: var(--sp-3); }
-.profile-item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); transition: background var(--transition); }
-.profile-item:hover { background: rgba(139,92,246,0.05); }
-.profile-name { flex: 1; font-size: var(--text-sm); }
-.profile-add { display: flex; gap: var(--sp-2); }
-.profile-add input { flex: 1; }
-.profile-msg { font-size: var(--text-xs); color: var(--success); margin-top: var(--sp-2); }
-
-/* Logs */
-.log-area { max-height: 140px; overflow-y: auto; font-family: var(--font-mono); font-size: var(--text-xs); padding: var(--sp-2); background: rgba(0,0,0,0.2); border-radius: var(--radius-md); }
-.log-line { padding: 2px var(--sp-2); color: var(--text-muted); }
-.log-line.warn { color: var(--warning); }
-.log-line.error { color: var(--danger); }
-
-
+@media (max-width: 1000px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
 @media (max-width: 768px) {
   .stats-row { grid-template-columns: 1fr; }
-  .grid-2 { grid-template-columns: 1fr; }
 }
 </style>

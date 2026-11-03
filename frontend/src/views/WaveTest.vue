@@ -490,11 +490,11 @@ onUnmounted(() => {
       </div>
       <div class="wave-dual">
         <div class="wave-channel">
-          <div class="wave-ch-label">A</div>
+          <div class="wave-ch-label"><span class="ch-tag ch-a">A</span></div>
           <canvas ref="rtCanvasRefA" class="rt-canvas"></canvas>
         </div>
         <div class="wave-channel">
-          <div class="wave-ch-label">B</div>
+          <div class="wave-ch-label"><span class="ch-tag ch-b">B</span></div>
           <canvas ref="rtCanvasRefB" class="rt-canvas"></canvas>
         </div>
       </div>
@@ -584,7 +584,7 @@ onUnmounted(() => {
 .test-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field:last-child { margin-bottom: 0; }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-2); font-weight: 500; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-2); font-weight: 500; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .field select { width: 100%; }
 .val { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 600; }

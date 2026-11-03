@@ -3,6 +3,7 @@ import { Lightbulb, Minus, Plus } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
+import { confirmDialog } from '@/dialog'
 
 const { t } = useI18n()
 
@@ -15,15 +16,50 @@ const msgType = ref<'ok' | 'err'>('ok')
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
+// Raising a limit by more than this in one go needs explicit confirmation.
+const SAFE_STEP = 20
+// Last values the backend accepted; a cancelled confirmation reverts to these.
+const saved = { limitA: 5, limitB: 5, overlimitA: 20, overlimitB: 20 }
+
 async function load() {
   const data = await api('/api/v1/strength_limit')
   limitA.value = data.channel_a ?? 5
   limitB.value = data.channel_b ?? 5
   overlimitA.value = data.overlimit_a ?? 20
   overlimitB.value = data.overlimit_b ?? 20
+  Object.assign(saved, { limitA: limitA.value, limitB: limitB.value, overlimitA: overlimitA.value, overlimitB: overlimitB.value })
 }
 
+function current() {
+  return { limitA: limitA.value, limitB: limitB.value, overlimitA: overlimitA.value, overlimitB: overlimitB.value }
+}
+
+let confirming = false
 async function save() {
+  if (confirming) return
+  const cur = current()
+  const jumps = (Object.keys(cur) as (keyof typeof cur)[])
+    .filter((k) => cur[k] - saved[k] > SAFE_STEP)
+  if (jumps.length) {
+    confirming = true
+    const names: Record<string, string> = {
+      limitA: 'A ' + t('strength.strengthLabel'), limitB: 'B ' + t('strength.strengthLabel'),
+      overlimitA: 'A ' + t('strength.overlimitLabel'), overlimitB: 'B ' + t('strength.overlimitLabel'),
+    }
+    const detail = jumps.map((k) => `${names[k]}: ${saved[k]} → ${cur[k]}`).join('\n')
+    const ok = await confirmDialog({
+      title: t('strength.bigJumpTitle'),
+      message: t('strength.bigJumpBody', { step: SAFE_STEP }) + '\n\n' + detail,
+      confirmText: t('strength.bigJumpConfirm'),
+      danger: true,
+    })
+    confirming = false
+    if (!ok) {
+      limitA.value = saved.limitA; limitB.value = saved.limitB
+      overlimitA.value = saved.overlimitA; overlimitB.value = saved.overlimitB
+      return
+    }
+  }
   const data = await apiPost('/api/v1/strength_limit', {
     channel_a: limitA.value,
     channel_b: limitB.value,
@@ -31,6 +67,7 @@ async function save() {
     overlimit_b: overlimitB.value,
   })
   if (data.success) {
+    Object.assign(saved, current())
     msg.value = t('common.saved')
     msgType.value = 'ok'
   } else {
@@ -78,8 +115,8 @@ onMounted(load)
     </div>
 
     <div class="limit-grid">
-      <section class="card">
-        <h2>{{ t('common.channelA') }}</h2>
+      <section class="card ch-a">
+        <h2 class="ch-head"><span class="ch-tag">A</span>{{ t('common.channelA') }}</h2>
         <div class="field">
           <label>{{ t('strength.strengthLabel') }}</label>
           <div class="slider-row" data-tour="strength-slider">
@@ -89,9 +126,6 @@ onMounted(load)
             <button class="adj-btn" aria-label="-1" @click="adj('limitA', -1)"><Minus :size="14" /></button>
             <input type="number" v-model.number="limitA" min="0" max="200" class="num-input" @input="onInput">
             <button class="adj-btn" aria-label="+1" @click="adj('limitA', 1)"><Plus :size="14" /></button>
-          </div>
-          <div class="bar-wrap">
-            <div class="bar-fill" :style="{ width: (limitA / 200 * 100) + '%' }"></div>
           </div>
         </div>
         <div class="field" style="margin-top:var(--sp-4)">
@@ -108,8 +142,8 @@ onMounted(load)
         </div>
       </section>
 
-      <section class="card">
-        <h2>{{ t('common.channelB') }}</h2>
+      <section class="card ch-b">
+        <h2 class="ch-head"><span class="ch-tag">B</span>{{ t('common.channelB') }}</h2>
         <div class="field">
           <label>{{ t('strength.strengthLabel') }}</label>
           <div class="slider-row">
@@ -119,9 +153,6 @@ onMounted(load)
             <button class="adj-btn" aria-label="-1" @click="adj('limitB', -1)"><Minus :size="14" /></button>
             <input type="number" v-model.number="limitB" min="0" max="200" class="num-input" @input="onInput">
             <button class="adj-btn" aria-label="+1" @click="adj('limitB', 1)"><Plus :size="14" /></button>
-          </div>
-          <div class="bar-wrap">
-            <div class="bar-fill" :style="{ width: (limitB / 200 * 100) + '%' }"></div>
           </div>
         </div>
         <div class="field" style="margin-top:var(--sp-4)">
@@ -169,7 +200,7 @@ onMounted(load)
 .limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-bottom: var(--sp-4); align-items: stretch; }
 .limit-grid .card { display: flex; flex-direction: column; height: 100%; }
 .field { margin-bottom: 0; }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .slider-row { display: flex; align-items: center; gap: var(--sp-2); }
 .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
 .value-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-2); }
@@ -190,14 +221,15 @@ onMounted(load)
 .adj-btn:active { transform: scale(0.92); }
 .num-input { width: 64px; text-align: center; font-variant-numeric: tabular-nums; font-size: var(--text-base); font-weight: 600; }
 .bar-wrap { margin-top: var(--sp-2); height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; }
-.bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 3px; transition: width 0.15s ease; }
+.ch-head { display: flex; align-items: center; gap: var(--sp-2); }
+.bar-fill { height: 100%; background: var(--ch-color, var(--accent)); border-radius: 3px; transition: width 0.15s ease; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-2); }
 .hint strong { color: var(--accent); }
 .status-bar { margin-bottom: var(--sp-4); padding: var(--sp-2) var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); text-align: center; }
 .msg { font-size: var(--text-sm); color: var(--text-muted); transition: color 0.2s; }
 .msg.ok { color: var(--success); }
 .msg.err { color: var(--danger); }
-.info-card { font-size: var(--text-sm); color: var(--text-secondary); }
+.info-card { font-size: var(--text-sm); color: var(--text-label); }
 .info-card h3 { font-size: var(--text-base); margin-bottom: var(--sp-2); color: var(--text); }
 .info-card ul { padding-left: var(--sp-4); }
 .info-card li { margin-bottom: var(--sp-2); line-height: 1.6; }

@@ -86,7 +86,7 @@ onUnmounted(() => { if (ws) ws.close() })
         </select>
         <input type="text" v-model="filterText" :placeholder="t('logs.filter')" class="filter-input">
         <label class="auto-scroll-check">
-          <input type="checkbox" v-model="autoScroll">
+          <input type="checkbox" class="switch" role="switch" v-model="autoScroll">
           <span>{{ t('logs.autoScroll') }}</span>
         </label>
         <button class="btn btn-ghost btn-sm" @click="clearLogs">{{ t('logs.clear') }}</button>

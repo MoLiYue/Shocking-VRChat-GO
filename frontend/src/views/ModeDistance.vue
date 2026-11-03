@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUnsaved } from '@/unsaved'
 import { RotateCcw, X } from 'lucide-vue-next'
 import { ref, onMounted, watch, nextTick, computed } from 'vue'
 import { api, apiPost, apiDelete } from '@/api'
@@ -60,6 +61,8 @@ async function loadPresets() {
   presets.value = data.presets || []
 }
 
+const unsaved = useUnsaved(() => ({ ch: ch.value, freqMs: freqMs.value, wavePreset: wavePreset.value, waveScale: waveScale.value, textureFloor: textureFloor.value, windowOps: windowOps.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+
 async function loadDistance() {
   const data = await api(`/api/v1/mode_config/${ch.value}/distance`)
   const cfg = data.config || {}
@@ -73,6 +76,7 @@ async function loadDistance() {
   envelopeCurve.value = cfg.wave_envelope_curve || 'smoothstep'
   triggerBottom.value = data.trigger_range?.bottom ?? 0
   triggerTop.value = data.trigger_range?.top ?? 0.8
+  unsaved.markClean()
 }
 
 async function saveDistance() {
@@ -89,9 +93,13 @@ async function saveDistance() {
   })
   distMsg.value = data.success ? t('common.saved') : t('common.saveFailed')
   setTimeout(() => distMsg.value = '', 3000)
+  if (data.success) unsaved.markClean()
 }
 
-function switchCh(c: 'a' | 'b') { ch.value = c; loadDistance() }
+async function switchCh(c: 'a' | 'b') {
+  if (c === ch.value || !(await unsaved.confirmDiscard())) return
+  ch.value = c; loadDistance()
+}
 
 // --- Curve editor ---
 async function loadParams() {
@@ -404,6 +412,7 @@ onMounted(() => {
     <div class="save-bar">
       <button class="btn btn-primary" @click="saveDistance">{{ t('modeDistance.saveDistance') }}</button>
       <button class="btn btn-ghost" @click="loadDistance"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
+      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg">{{ distMsg }}</span>
     </div>
 
@@ -481,7 +490,7 @@ onMounted(() => {
 .ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
 .field select, .field input[type="number"] { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }

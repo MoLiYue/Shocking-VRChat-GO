@@ -344,6 +344,22 @@ func (a *App) ogbHeartbeat(ctx context.Context) {
 	defer logx.Info("[sps] OGB_ENABLED heartbeat stopped")
 	var client *osc.Client
 	lastTarget := ""
+	// Only report state changes: VRChat being closed is normal and must not
+	// flood the log with a warning every interval.
+	// UDP reports "connection refused" asynchronously on the *next* send, so
+	// with VRChat closed sends alternate ok/fail. Recovery therefore needs a
+	// streak of successes before we consider the target alive again.
+	failing := false
+	okStreak := 0
+	fail := func(err error) {
+		okStreak = 0
+		if !failing {
+			logx.Warn("[sps] OGB_ENABLED send failed (VRChat not running?), retrying silently: %v", err)
+			failing = true
+		} else {
+			logx.Debug("[sps] OGB_ENABLED send failed: %v", err)
+		}
+	}
 	defer func() {
 		if client != nil {
 			client.Close()
@@ -363,7 +379,7 @@ func (a *App) ogbHeartbeat(ctx context.Context) {
 					}
 					c, err := osc.NewClient(host, port)
 					if err != nil {
-						logx.Warn("[sps] OGB_ENABLED send failed, will retry: %v", err)
+						fail(err)
 						client = nil
 					} else {
 						client, lastTarget = c, target
@@ -371,10 +387,15 @@ func (a *App) ogbHeartbeat(ctx context.Context) {
 					}
 				}
 				if client != nil {
+					// Keep the socket on failure: a UDP error only means nobody
+					// is listening yet, recreating it would just add log noise.
 					if err := client.Send("/avatar/parameters/OGB_ENABLED", true); err != nil {
-						logx.Warn("[sps] OGB_ENABLED send failed, will retry: %v", err)
-						client.Close()
-						client, lastTarget = nil, ""
+						fail(err)
+					} else if failing {
+						if okStreak++; okStreak >= 3 {
+							failing = false
+							logx.Info("[sps] OGB_ENABLED sending again")
+						}
 					}
 				}
 			} else {

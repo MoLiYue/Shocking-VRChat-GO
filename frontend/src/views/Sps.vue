@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useUnsaved } from '@/unsaved'
+import { RotateCcw } from 'lucide-vue-next'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -33,6 +35,8 @@ function flash(target: 'save' | 'add', text: string, isErr: boolean) {
   setTimeout(() => { if (target === 'save') msg.value = ''; else addMsg.value = '' }, 3000)
 }
 
+const unsaved = useUnsaved(() => ({ enabled: enabled.value, heartbeat: heartbeat.value, interval: interval.value, targetHost: targetHost.value, targetPort: targetPort.value }))
+
 async function load() {
   try {
     const data = await api('/api/v1/sps')
@@ -46,6 +50,7 @@ async function load() {
   } catch {
     flash('save', t('common.loadFailed'), true)
   }
+  unsaved.markClean()
 }
 
 async function loadZones() {
@@ -117,7 +122,7 @@ onUnmounted(() => {
     <section class="card">
       <h2>{{ t('sps.enableTitle') }}</h2>
       <label class="toggle-row">
-        <input type="checkbox" v-model="enabled" />
+        <input type="checkbox" class="switch" role="switch" v-model="enabled" />
         <span>{{ enabled ? t('common.enabled') : t('common.disabled') }}</span>
       </label>
       <p class="hint">{{ t('sps.enableHint') }}</p>
@@ -180,10 +185,10 @@ onUnmounted(() => {
     <!-- OGB_ENABLED 心跳 -->
     <section class="card">
       <h2>{{ t('sps.heartbeatTitle') }}</h2>
-      <p class="page-desc" style="margin-bottom:var(--sp-4)">{{ t('sps.heartbeatDesc') }}</p>
+      <p class="card-desc">{{ t('sps.heartbeatDesc') }}</p>
       <div class="field">
         <label class="toggle-row">
-          <input type="checkbox" v-model="heartbeat" />
+          <input type="checkbox" class="switch" role="switch" v-model="heartbeat" />
           <span>{{ heartbeat ? t('common.enabled') : t('common.disabled') }}</span>
         </label>
       </div>
@@ -205,9 +210,10 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <div class="save-bar">
+    <div class="save-bar sticky">
       <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
-      <button class="btn btn-ghost" @click="load">{{ t('common.reload') }}</button>
+      <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
+      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
     </div>
 
@@ -233,7 +239,7 @@ onUnmounted(() => {
 .empty-box {
   padding: var(--sp-5);
   text-align: center;
-  color: var(--text-dim);
+  color: var(--text-muted);
   background: var(--bg-input, rgba(255, 255, 255, .03));
   border: 1px dashed var(--border);
   border-radius: var(--radius-md, 8px);
@@ -248,7 +254,7 @@ onUnmounted(() => {
   text-align: left;
   font-size: .78rem;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-muted);
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
@@ -274,9 +280,9 @@ onUnmounted(() => {
 .zone-id { font-weight: 600; }
 
 .path { font-family: var(--font-mono, monospace); word-break: break-all; }
-.path-prefix { color: var(--text-dim); opacity: .6; }
+.path-prefix { color: var(--text-muted); opacity: .6; }
 
-.seen { color: var(--text-dim); white-space: nowrap; }
+.seen { color: var(--text-muted); white-space: nowrap; }
 
 .add-cell { white-space: nowrap; display: flex; gap: var(--sp-2); }
 
@@ -292,7 +298,7 @@ onUnmounted(() => {
 .ch-head {
   font-size: .9rem;
   margin: 0 0 var(--sp-2);
-  color: var(--text-dim);
+  color: var(--text-muted);
 }
 
 .cfg-list { list-style: none; margin: 0; padding: 0; }
@@ -315,7 +321,7 @@ onUnmounted(() => {
 
 .mode-tag {
   font-size: .72rem;
-  color: var(--text-dim);
+  color: var(--text-muted);
   padding: 1px 7px;
   border: 1px solid var(--border);
   border-radius: 999px;

@@ -131,6 +131,8 @@ func DefaultAdvanced() M {
 				"port": 80,
 			},
 			"github_mirror": "",
+			// Windows: closing the window hides it to the tray instead of exiting.
+			"minimize_to_tray": false,
 		},
 		"chatbox": M{
 			"enabled":           false,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Check, CircleCheck, CircleX, RotateCcw } from 'lucide-vue-next'
+import { useUnsaved } from '@/unsaved'
+import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api, apiPost } from '@/api'
@@ -20,11 +21,15 @@ const v4Enabled = ref(true)
 const webPort = ref(8800)
 const webHost = ref('127.0.0.1')
 const githubMirror = ref('')
+const minimizeToTray = ref(false)
+const trayAvailable = ref(false)
 const logLevel = ref('INFO')
 const msg = ref('')
 const msgErr = ref(false)
 const importMsg = ref('')
 const importErr = ref(false)
+
+const unsaved = useUnsaved(() => ({ oscPort: oscPort.value, oscHost: oscHost.value, wsPort: wsPort.value, v4Enabled: v4Enabled.value, webPort: webPort.value, webHost: webHost.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value }))
 
 async function load() {
   const data = await api('/api/v1/config')
@@ -37,6 +42,9 @@ async function load() {
   webHost.value = adv.web_server?.listen_host || '127.0.0.1'
   logLevel.value = adv.log_level || 'INFO'
   githubMirror.value = adv.general?.github_mirror || ''
+  minimizeToTray.value = !!adv.general?.minimize_to_tray
+  try { trayAvailable.value = !!(await api('/api/v1/status')).tray_available } catch {}
+  unsaved.markClean()
 }
 
 async function save() {
@@ -46,6 +54,7 @@ async function save() {
     web_server: { listen_port: webPort.value, listen_host: webHost.value },
     log_level: logLevel.value,
     github_mirror: githubMirror.value,
+    minimize_to_tray: minimizeToTray.value,
   })
   if (data.success) {
     if (data.restart_needed?.length) {
@@ -66,6 +75,7 @@ async function save() {
     }
   } else { msg.value = data.message || t('common.saveFailed'); msgErr.value = true }
   setTimeout(() => msg.value = '', 8000)
+  if (data.success) unsaved.markClean()
 }
 
 function exportConfig() {
@@ -145,6 +155,16 @@ function fmtBytes(n: number): string {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
+/** Turn raw network/GitHub errors into something a user can act on. */
+function friendlyUpdateError(raw: string): string {
+  const s = String(raw || '')
+  if (/403|rate limit/i.test(s)) return t('settings.updateErrRateLimit')
+  if (/404/.test(s)) return t('settings.updateErrNotFound')
+  if (/timeout|timed out|deadline/i.test(s)) return t('settings.updateErrTimeout')
+  if (/no such host|dial|connect|network|refused|Failed to fetch/i.test(s)) return t('settings.updateErrNetwork')
+  return s || t('settings.updateFailed')
+}
+
 async function checkUpdate() {
   updateChecking.value = true
   updateMsg.value = ''
@@ -152,7 +172,7 @@ async function checkUpdate() {
     const data = await api('/api/v1/update/check')
     updateInfo.value = data
     if (data.error) {
-      updateMsg.value = data.error
+      updateMsg.value = friendlyUpdateError(data.error)
       updateErr.value = true
     }
   } catch (e) {
@@ -173,7 +193,7 @@ function startProgressPolling() {
       updateTotal.value = p.total || 0
       updateStageMsg.value = p.message || ''
       if (p.stage === 'error') {
-        updateStageErr.value = p.error || t('settings.updateFailed')
+        updateStageErr.value = friendlyUpdateError(p.error)
         stopProgressPolling()
         updateApplying.value = false
       }
@@ -218,7 +238,7 @@ async function applyUpdate() {
       pollForRestart()
     } else if (data && !data.success) {
       updateStage.value = 'error'
-      updateStageErr.value = data.detail || data.message || t('settings.updateFailed')
+      updateStageErr.value = friendlyUpdateError(data.detail || data.message)
       stopProgressPolling()
       updateApplying.value = false
     } else {
@@ -238,7 +258,7 @@ async function applyUpdate() {
       pollForRestart()
     } else {
       updateStage.value = 'error'
-      updateStageErr.value = String(e)
+      updateStageErr.value = friendlyUpdateError(String(e))
       stopProgressPolling()
       updateApplying.value = false
     }
@@ -329,7 +349,7 @@ onUnmounted(() => { stopProgressPolling() })
         <div class="field">
           <label>{{ t('settings.v4Title') }}</label>
           <label class="toggle-row">
-            <input type="checkbox" v-model="v4Enabled">
+            <input type="checkbox" class="switch" role="switch" v-model="v4Enabled">
             <span>{{ v4Enabled ? t('common.enabled') : t('common.disabled') }}</span>
           </label>
           <p class="hint">{{ t('settings.v4Hint') }}</p>
@@ -378,11 +398,23 @@ onUnmounted(() => { stopProgressPolling() })
           </div>
         </div>
       </section>
+
+      <section v-if="trayAvailable" class="card">
+        <h2>{{ t('settings.windowTitle') }}</h2>
+        <div class="field">
+          <label class="toggle-row">
+            <input type="checkbox" class="switch" role="switch" v-model="minimizeToTray">
+            <span>{{ t('settings.minimizeToTray') }}</span>
+          </label>
+          <p class="hint">{{ t('settings.minimizeToTrayHint') }}</p>
+        </div>
+      </section>
     </div>
 
     <div class="save-bar sticky">
       <button class="btn btn-primary" @click="save">{{ t('settings.saveSettings') }}</button>
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('settings.reloadSettings') }}</button>
+      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
     </div>
 
@@ -392,9 +424,18 @@ onUnmounted(() => { stopProgressPolling() })
       <div class="ie-bar">
         <button class="btn btn-ghost" @click="exportConfig">{{ t('settings.exportConfig') }}</button>
         <button class="btn btn-ghost" @click="triggerImport">{{ t('settings.importConfig') }}</button>
-        <button class="btn btn-ghost" @click="replayTour">{{ t('settings.tourRestart') }}</button>
         <input ref="importFileRef" type="file" accept=".json" hidden @change="handleImport">
         <span class="msg" :class="{ err: importErr }">{{ importMsg }}</span>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:var(--sp-4)">
+      <h2>{{ t('settings.helpTitle') }}</h2>
+      <p class="hint" style="margin-bottom:var(--sp-3)">{{ t('settings.helpDesc') }}</p>
+      <div class="ie-bar">
+        <button class="btn btn-ghost" @click="replayTour"><Compass :size="14" />{{ t('settings.tourRestart') }}</button>
+        <a class="btn btn-ghost" href="https://github.com/MoLiYue/Shocking-VRChat-GO/blob/main/doc/dglab/安全须知.md" target="_blank" rel="noopener"><ShieldCheck :size="14" />{{ t('settings.safetyDoc') }}</a>
+        <span class="hint shortcut-hint">{{ t('settings.shortcutsHint') }}</span>
       </div>
     </section>
 
@@ -528,12 +569,12 @@ onUnmounted(() => { stopProgressPolling() })
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field:last-child { margin-bottom: 0; }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .toggle-row { display: flex; align-items: center; gap: var(--sp-2); cursor: pointer; font-size: var(--text-sm); }
-.toggle-row input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
-.field input, .field select { width: 100%; }
+.field input:not(.switch), .field select { width: 100%; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 .ie-bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.shortcut-hint { margin: 0 0 0 auto; }
 .msg { font-size: var(--text-sm); color: var(--success); }
 .msg.err { color: var(--danger); }
 .msg.waiting { color: var(--accent); animation: pulse-text 1.5s ease-in-out infinite; }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useUnsaved } from '@/unsaved'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -23,6 +24,8 @@ async function loadPresets() {
   presets.value = data.presets || []
 }
 
+const unsaved = useUnsaved(() => ({ ch: activeChannel.value, switchDuration: switchDuration.value, shockDuration: shockDuration.value, shockPreset: shockPreset.value, shockScale: shockScale.value, touchPreset: touchPreset.value, touchScale: touchScale.value, touchDerivative: touchDerivative.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+
 async function loadCombo() {
   const data = await api(`/api/v1/combo/${activeChannel.value}`)
   switchDuration.value = data.combo?.switch_duration ?? 0.3
@@ -34,6 +37,7 @@ async function loadCombo() {
   touchDerivative.value = data.touch?.n_derivative ?? 1
   triggerBottom.value = data.trigger_range?.bottom ?? 0
   triggerTop.value = data.trigger_range?.top ?? 1
+  unsaved.markClean()
 }
 
 async function saveCombo() {
@@ -45,9 +49,13 @@ async function saveCombo() {
   })
   msg.value = data.success ? t('common.saved') : t('common.saveFailed')
   setTimeout(() => msg.value = '', 3000)
+  if (data.success) unsaved.markClean()
 }
 
-function switchChannel(ch: 'a' | 'b') { activeChannel.value = ch; loadCombo() }
+async function switchChannel(ch: 'a' | 'b') {
+  if (ch === activeChannel.value || !(await unsaved.confirmDiscard())) return
+  activeChannel.value = ch; loadCombo()
+}
 
 onMounted(() => { loadPresets(); loadCombo() })
 </script>
@@ -106,7 +114,8 @@ onMounted(() => { loadPresets(); loadCombo() })
         <div class="save-bar">
           <button class="btn btn-primary" @click="saveCombo">{{ t('common.save') }}</button>
           <button class="btn btn-ghost" @click="loadCombo">{{ t('common.reload') }}</button>
-          <span class="msg" v-if="msg">{{ msg }}</span>
+          <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
+      <span class="msg" v-if="msg">{{ msg }}</span>
         </div>
       </div>
 
@@ -137,7 +146,7 @@ onMounted(() => { loadPresets(); loadCombo() })
 .ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
-.field label { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
 .field select { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .diagram { display: flex; align-items: stretch; height: 100px; gap: 2px; margin-bottom: var(--sp-4); }

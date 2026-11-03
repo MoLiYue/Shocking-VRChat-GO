@@ -479,3 +479,38 @@ func TestVersionNewer(t *testing.T) {
 		t.Fatal("VersionNewer")
 	}
 }
+
+func TestShowWindowAndTraySetting(t *testing.T) {
+	e := newEnv(t)
+	called := make(chan struct{}, 1)
+	e.a.OnShowWindow = func() { called <- struct{}{} }
+	e.a.TrayAvailable = true
+	if r := e.postJSON(t, "/api/v1/ui/show", nil); r["success"] != true {
+		t.Fatal(r)
+	}
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("OnShowWindow not called")
+	}
+	if st := e.getJSON(t, "/api/v1/status"); st["tray_available"] != true {
+		t.Fatal(st)
+	}
+	if v := config.Bool(e.a.Cfg.Get("general", "minimize_to_tray"), true); v {
+		t.Fatal("minimize_to_tray should default to false")
+	}
+	e.postJSON(t, "/api/v1/settings", map[string]any{"minimize_to_tray": true})
+	if !config.Bool(e.a.Cfg.Get("general", "minimize_to_tray"), false) {
+		t.Fatal("minimize_to_tray not saved")
+	}
+}
+
+func TestParamsSaveKeepsStrengthLimit(t *testing.T) {
+	e := newEnv(t)
+	e.postJSON(t, "/api/v1/strength_limit", map[string]any{"channel_a": 77})
+	// The params page no longer sends strength_limit; it must not reset it.
+	e.postJSON(t, "/api/v1/params/a", map[string]any{"params": []any{map[string]any{"path": "/x", "mode": "distance"}}})
+	if v := config.Int(e.a.Cfg.GetBasic("dglab3", "channel_a", "strength_limit"), 0); v != 77 {
+		t.Fatalf("strength_limit changed to %d", v)
+	}
+}

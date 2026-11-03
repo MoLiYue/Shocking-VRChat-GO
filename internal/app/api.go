@@ -201,6 +201,12 @@ func (a *App) Handler() http.Handler {
 		go func() { time.Sleep(500 * time.Millisecond); a.Shutdown() }()
 		return map[string]any{"success": true, "message": "Shutting down..."}, nil
 	})
+	h("POST /api/v1/ui/show", func(*http.Request) (any, error) {
+		if a.OnShowWindow != nil {
+			go a.OnShowWindow()
+		}
+		return map[string]any{"success": true}, nil
+	})
 	h("GET /api/v1/logs", func(*http.Request) (any, error) {
 		return map[string]any{"logs": logx.Buffer(200)}, nil
 	})
@@ -313,9 +319,10 @@ func (a *App) apiStatus(*http.Request) (any, error) {
 		"engine_running": a.Engine.Running(),
 		"osc_listening": fmt.Sprintf("%s:%d", config.Str(a.Cfg.Get("osc", "listen_host"), ""),
 			config.Int(a.Cfg.Get("osc", "listen_port"), 0)),
-		"last_osc_time": a.activity.lastTime(),
-		"devices":       devs,
-		"version":       Version,
+		"last_osc_time":  a.activity.lastTime(),
+		"devices":        devs,
+		"version":        Version,
+		"tray_available": a.TrayAvailable,
 	}, nil
 }
 

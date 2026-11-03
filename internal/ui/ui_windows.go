@@ -34,6 +34,10 @@ type Options struct {
 	Debug     bool
 	// StateFile persists window position/size/maximized between runs ("" = off).
 	StateFile string
+	// HideOnClose, when it returns true, makes the close button hide the
+	// window (to the tray) instead of exiting. OnHide runs after hiding.
+	HideOnClose func() bool
+	OnHide      func()
 }
 
 var (
@@ -54,6 +58,11 @@ var (
 	pShowWindow           = user32.NewProc("ShowWindow")
 	pSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
 	pMessageBoxW          = user32.NewProc("MessageBoxW")
+	pSetWindowLongPtrW    = user32.NewProc("SetWindowLongPtrW")
+	pCallWindowProcW      = user32.NewProc("CallWindowProcW")
+	pIsIconic             = user32.NewProc("IsIconic")
+	pIsWindowVisible      = user32.NewProc("IsWindowVisible")
+	pAllowSetForeground   = user32.NewProc("AllowSetForegroundWindow")
 	pCreateSolidBrush     = gdi32.NewProc("CreateSolidBrush")
 	pDwmSetWindowAttr     = dwmapi.NewProc("DwmSetWindowAttribute")
 	pGetCurrentThreadId   = kernel32.NewProc("GetCurrentThreadId")
@@ -66,6 +75,10 @@ const (
 	wmClose           = 0x0010
 	gclpHbrBackground = ^uintptr(9) // -10
 	swShowMaximized   = 3
+	swHide            = 0
+	swShow            = 5
+	swRestore         = 9
+	gwlpWndProc       = ^uintptr(3) // -4
 	spiGetWorkArea    = 0x0030
 	monitorNull       = 0
 
@@ -117,9 +130,13 @@ type windowState struct {
 }
 
 var (
-	mu      sync.Mutex
-	current webview2.WebView
-	closed  bool
+	mu       sync.Mutex
+	current  webview2.WebView
+	closed   bool
+	curHwnd  uintptr
+	quitting bool
+	oldProc  uintptr
+	subProc  uintptr
 )
 
 // Available reports whether a native window can be created on this platform.
@@ -304,27 +321,78 @@ func RunWindow(o Options) bool {
 	if st.Maximized {
 		_, _, _ = pShowWindow.Call(uintptr(wv.Window()), swShowMaximized)
 	}
+	hw := uintptr(wv.Window())
+	mu.Lock()
+	curHwnd = hw
+	mu.Unlock()
+	if o.HideOnClose != nil {
+		// Subclass the window so the close button can hide instead of exit.
+		subProc = windows.NewCallback(func(h, m, w, l uintptr) uintptr {
+			if uint32(m) == wmClose {
+				mu.Lock()
+				q := quitting
+				mu.Unlock()
+				if !q && o.HideOnClose() {
+					_, _, _ = pShowWindow.Call(h, swHide)
+					if o.OnHide != nil {
+						go o.OnHide()
+					}
+					return 0
+				}
+			}
+			r, _, _ := pCallWindowProcW.Call(oldProc, h, m, w, l)
+			return r
+		})
+		oldProc, _, _ = pSetWindowLongPtrW.Call(hw, gwlpWndProc, subProc)
+	}
 	wv.Navigate(o.URL)
 	wv.Run()
 	// Closed by the user (state captured on WM_CLOSE) or programmatically
 	// via Close() (window still alive here).
-	if s := placementOf(uintptr(wv.Window())); s != nil {
-		lastState = s
+	// A window hidden to the tray reports no useful show state; keep the
+	// placement captured when it was closed/hidden in that case.
+	if vis, _, _ := pIsWindowVisible.Call(uintptr(wv.Window())); vis != 0 || lastState == nil {
+		if s := placementOf(uintptr(wv.Window())); s != nil {
+			lastState = s
+		}
 	}
 	saveState(o.StateFile, lastState)
 	mu.Lock()
 	current = nil
+	curHwnd = 0
 	closed = true
 	mu.Unlock()
 	wv.Destroy()
 	return true
 }
 
+// ShowWindow brings the (possibly hidden or minimized) window to the front.
+// Returns false if there is no window.
+func ShowWindow() bool {
+	mu.Lock()
+	hw := curHwnd
+	mu.Unlock()
+	if hw == 0 {
+		return false
+	}
+	if ic, _, _ := pIsIconic.Call(hw); ic != 0 {
+		_, _, _ = pShowWindow.Call(hw, swRestore)
+	} else {
+		_, _, _ = pShowWindow.Call(hw, swShow)
+	}
+	_, _, _ = pSetForegroundWindow.Call(hw)
+	return true
+}
+
+// AllowForeground lets another process (the running instance) take focus.
+func AllowForeground() { _, _, _ = pAllowSetForeground.Call(^uintptr(0)) }
+
 // Close terminates the window from any goroutine.
 func Close() {
 	mu.Lock()
 	defer mu.Unlock()
 	closed = true
+	quitting = true
 	if current != nil {
 		w := current
 		w.Dispatch(func() { w.Terminate() })

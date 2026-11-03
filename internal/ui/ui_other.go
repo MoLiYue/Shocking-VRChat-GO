@@ -13,15 +13,44 @@ import (
 
 // Options configures the window.
 type Options struct {
-	URL       string
-	Title     string
-	Width     uint
-	Height    uint
-	MinWidth  uint
-	MinHeight uint
-	Debug     bool
-	StateFile string
+	URL         string
+	Title       string
+	Width       uint
+	Height      uint
+	MinWidth    uint
+	MinHeight   uint
+	Debug       bool
+	StateFile   string
+	HideOnClose func() bool
+	OnHide      func()
 }
+
+// TrayOptions configures the notification-area icon (Windows only).
+type TrayOptions struct {
+	Tooltip   string
+	OpenLabel string
+	QuitLabel string
+	OnOpen    func()
+	OnQuit    func()
+}
+
+// TrayAvailable reports whether a notification-area icon is supported.
+func TrayAvailable() bool { return false }
+
+// StartTray is a no-op on this platform.
+func StartTray(TrayOptions) {}
+
+// StopTray is a no-op on this platform.
+func StopTray() {}
+
+// TrayNotify is a no-op on this platform.
+func TrayNotify(string, string) {}
+
+// ShowWindow is unsupported here.
+func ShowWindow() bool { return false }
+
+// AllowForeground is a no-op on this platform.
+func AllowForeground() {}
 
 // Available reports whether a native window can be created on this platform.
 func Available() bool { return false }

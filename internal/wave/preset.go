@@ -145,11 +145,12 @@ func (l *Library) Reload() {
 			order = append(order, p.Name)
 		}
 		presets[p.Name] = p
-		logx.Info("[preset] Loaded: %s (%d ops)", p.Name, len(p.Ops))
+		logx.Debug("[preset] Loaded: %s (%d ops)", p.Name, len(p.Ops))
 	}
 	l.mu.Lock()
 	l.presets, l.order = presets, order
 	l.mu.Unlock()
+	logx.Info("[preset] Loaded %d wave presets from %s", len(order), l.dir)
 }
 
 // Names returns preset names in load order.
