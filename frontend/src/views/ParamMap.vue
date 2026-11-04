@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-vue-next'
 import { ref, onMounted, onActivated } from 'vue'
 import { api, apiPost } from '@/api'
@@ -186,9 +187,7 @@ onBeforeRouteLeave(async () => {
       <div class="settings-row">
         <div class="setting">
           <label>{{ t('params.defaultMode') }}</label>
-          <select v-model="defaultModeA" @change="dirtyA = true">
-            <option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option>
-          </select>
+          <AppSelect v-model="defaultModeA" @change="dirtyA = true" :options="[...(MODES).map((m) => ({ value: m.value, label: modeLabel(m.value) }))]" />
         </div>
         <div class="setting">
           <label>{{ t('params.strengthLimit') }}</label>
@@ -207,7 +206,7 @@ onBeforeRouteLeave(async () => {
             <template v-if="editIndexA === i">
               <td><input type="checkbox" v-model="p.enabled" @change="dirtyA = true"></td>
               <td><input v-model="editPath" class="edit-input"></td>
-              <td><select v-model="editMode" class="edit-select"><option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option></select></td>
+              <td><AppSelect v-model="editMode" class="edit-select" :options="[...(MODES).map((m) => ({ value: m.value, label: modeLabel(m.value) }))]" /></td>
               <td class="actions"><button class="icon-action success" :title="t('common.save')" :aria-label="t('common.save')" @click="confirmEdit('a')"><Check :size="15" /></button><button class="icon-action" :title="t('common.cancel')" :aria-label="t('common.cancel')" @click="cancelEdit('a')"><X :size="15" /></button></td>
             </template>
             <template v-else>
@@ -224,9 +223,7 @@ onBeforeRouteLeave(async () => {
       <div class="add-form" data-tour="param-add">
         <span class="prefix-label">/avatar/parameters/</span>
         <input v-model="newPathA" placeholder="pcs/contact/enterPass" class="add-input" @keyup.enter="addParam('a')">
-        <select v-model="newModeA" class="add-select" data-tour="param-mode-select">
-          <option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option>
-        </select>
+        <AppSelect v-model="newModeA" class="add-select" data-tour="param-mode-select" :options="[...(MODES).map((m) => ({ value: m.value, label: modeLabel(m.value) }))]" />
         <button class="btn btn-success" @click="addParam('a')"><Plus :size="15" />{{ t('common.add') }}</button>
       </div>
 
@@ -247,9 +244,7 @@ onBeforeRouteLeave(async () => {
       <div class="settings-row">
         <div class="setting">
           <label>{{ t('params.defaultMode') }}</label>
-          <select v-model="defaultModeB" @change="dirtyB = true">
-            <option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option>
-          </select>
+          <AppSelect v-model="defaultModeB" @change="dirtyB = true" :options="[...(MODES).map((m) => ({ value: m.value, label: modeLabel(m.value) }))]" />
         </div>
         <div class="setting">
           <label>{{ t('params.strengthLimit') }}</label>
@@ -268,7 +263,7 @@ onBeforeRouteLeave(async () => {
             <template v-if="editIndexB === i">
               <td><input type="checkbox" v-model="p.enabled" @change="dirtyB = true"></td>
               <td><input v-model="editPath" class="edit-input"></td>
-              <td><select v-model="editMode" class="edit-select"><option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option></select></td>
+              <td><AppSelect v-model="editMode" class="edit-select" :options="[...(MODES).map((m) => ({ value: m.value, label: modeLabel(m.value) }))]" /></td>
               <td class="actions"><button class="icon-action success" :title="t('common.save')" :aria-label="t('common.save')" @click="confirmEdit('b')"><Check :size="15" /></button><button class="icon-action" :title="t('common.cancel')" :aria-label="t('common.cancel')" @click="cancelEdit('b')"><X :size="15" /></button></td>
             </template>
             <template v-else>
@@ -285,9 +280,7 @@ onBeforeRouteLeave(async () => {
       <div class="add-form">
         <span class="prefix-label">/avatar/parameters/</span>
         <input v-model="newPathB" placeholder="pcs/contact/enterPass" class="add-input" @keyup.enter="addParam('b')">
-        <select v-model="newModeB" class="add-select">
-          <option v-for="m in MODES" :key="m.value" :value="m.value">{{ modeLabel(m.value) }}</option>
-        </select>
+        <AppSelect v-model="newModeB" class="add-select" :options="[...(MODES).map((m) => ({ value: m.value, label: modeLabel(m.value) }))]" />
         <button class="btn btn-success" @click="addParam('b')"><Plus :size="15" />{{ t('common.add') }}</button>
       </div>
 
@@ -313,7 +306,7 @@ onBeforeRouteLeave(async () => {
 .settings-row { display: flex; gap: var(--sp-4); margin-bottom: var(--sp-3); }
 .setting { flex: 1; }
 .setting label { display: block; font-size: var(--text-xs); color: var(--text-muted); margin-bottom: var(--sp-1); }
-.setting select, .setting input { width: 100%; }
+.setting .app-select, .setting input { width: 100%; }
 .readonly-value {
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--sp-3) var(--sp-4);
@@ -338,11 +331,12 @@ td { padding: var(--sp-2); font-size: var(--text-sm); border-bottom: 1px solid v
 .editing { background: rgba(var(--accent-rgb), 0.04); }
 .disabled-row { opacity: 0.5; }
 .path-disabled { text-decoration: line-through; }
-.edit-input, .edit-select { padding: var(--sp-1) var(--sp-2); border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text); font-family: var(--font-mono); font-size: var(--text-xs); width: 100%; }
+.edit-select { width: 100%; min-width: 0; }
+.edit-input { padding: var(--sp-1) var(--sp-2); border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text); font-family: var(--font-mono); font-size: var(--text-xs); width: 100%; }
 .add-form { display: flex; gap: var(--sp-2); align-items: center; margin-bottom: var(--sp-3); }
 .prefix-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; background: var(--bg-tertiary); padding: var(--sp-2) var(--sp-2); border-radius: var(--radius-sm) 0 0 var(--radius-sm); border: 1px solid var(--border); border-right: none; }
 .add-input { flex: 1; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: 0 var(--radius-md) var(--radius-md) 0; background: var(--bg-elevated); color: var(--text); font-family: var(--font-mono); font-size: var(--text-xs); }
-.add-select { width: 100px; font-size: var(--text-xs); }
+.add-select { width: 120px; min-width: 0; }
 .save-row { display: flex; gap: var(--sp-2); align-items: center; }
 .msg-bar { text-align: center; padding: var(--sp-2) var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--success); }
 .msg-bar.err { color: var(--danger); }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { themePref, setTheme, type ThemePref } from '@/theme'
 import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
@@ -375,12 +376,7 @@ onUnmounted(() => { stopProgressPolling() })
         <h2>{{ t('settings.logTitle') }}</h2>
         <div class="field">
           <label>{{ t('settings.logLevel') }}</label>
-          <select v-model="logLevel">
-            <option value="DEBUG">DEBUG</option>
-            <option value="INFO">INFO</option>
-            <option value="WARNING">WARNING</option>
-            <option value="ERROR">ERROR</option>
-          </select>
+          <AppSelect v-model="logLevel" :options="[{ value: 'DEBUG', label: 'DEBUG' }, { value: 'INFO', label: 'INFO' }, { value: 'WARNING', label: 'WARNING' }, { value: 'ERROR', label: 'ERROR' }]" />
           <p class="hint">{{ t('settings.logLevelHint') }}</p>
         </div>
       </section>
@@ -587,7 +583,7 @@ onUnmounted(() => { stopProgressPolling() })
 .field:last-child { margin-bottom: 0; }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .toggle-row { display: flex; align-items: center; gap: var(--sp-2); cursor: pointer; font-size: var(--text-sm); }
-.field input:not(.switch), .field select { width: 100%; }
+.field input:not(.switch), .field .app-select { width: 100%; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 .ie-bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .shortcut-hint { margin: 0 0 0 auto; }

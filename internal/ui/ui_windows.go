@@ -20,10 +20,10 @@ import (
 const IconResourceID = 1
 
 // Window/title-bar backgrounds per theme (match --bg-base in global.css:
-// Catppuccin Mocha base / Latte mantle), so nothing flashes before paint.
+// Catppuccin Mocha base / Rosé Pine Dawn base), so nothing flashes before paint.
 const (
 	BackgroundDark  = 0x1e1e2e
-	BackgroundLight = 0xe6e9ef
+	BackgroundLight = 0xfaf4ed
 )
 
 // Options configures the window.
@@ -265,7 +265,7 @@ func RunWindow(o Options) bool {
 	if o.Dark {
 		_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FF1E1E2E")
 	} else {
-		_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FFE6E9EF")
+		_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FFFAF4ED")
 	}
 
 	dpi := systemDPI()

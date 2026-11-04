@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
@@ -97,20 +98,12 @@ onMounted(() => { loadPresets(); load() })
         <h2>{{ t('modeTouch.params') }}</h2>
         <div class="field">
           <label>{{ t('modeTouch.derivative') }}</label>
-          <select v-model.number="nDerivative">
-            <option :value="0">{{ t('modeTouch.deriv0') }}</option>
-            <option :value="1">{{ t('modeTouch.deriv1') }}</option>
-            <option :value="2">{{ t('modeTouch.deriv2') }}</option>
-            <option :value="3">{{ t('modeTouch.deriv3') }}</option>
-          </select>
+          <AppSelect v-model="nDerivative" :options="[{ value: 0, label: t('modeTouch.deriv0') }, { value: 1, label: t('modeTouch.deriv1') }, { value: 2, label: t('modeTouch.deriv2') }, { value: 3, label: t('modeTouch.deriv3') }]" />
           <p class="hint">{{ t('modeTouch.derivHint') }}</p>
         </div>
         <div class="field">
           <label>{{ t('common.wavePreset') }}</label>
-          <select v-model="wavePreset">
-            <option value="">{{ t('modeTouch.presetNone') }}</option>
-            <option v-for="p in presets" :key="p" :value="p">{{ p }}</option>
-          </select>
+          <AppSelect v-model="wavePreset" :options="[{ value: '', label: t('modeTouch.presetNone') }, ...(presets).map((p) => ({ value: p, label: p }))]" />
         </div>
         <div class="field">
           <label>{{ t('common.waveScale') }}: {{ (waveScale * 100).toFixed(0) }}%</label>
@@ -167,12 +160,7 @@ onMounted(() => { loadPresets(); load() })
         </div>
         <div class="field">
           <label>{{ t('modeDistance.envelope') }}</label>
-          <select v-model="envelopeCurve">
-            <option value="smoothstep">smoothstep</option>
-            <option value="linear">linear</option>
-            <option value="ease_in">ease_in</option>
-            <option value="ease_out">ease_out</option>
-          </select>
+          <AppSelect v-model="envelopeCurve" :options="[{ value: 'smoothstep', label: 'smoothstep' }, { value: 'linear', label: 'linear' }, { value: 'ease_in', label: 'ease_in' }, { value: 'ease_out', label: 'ease_out' }]" />
         </div>
       </section>
     </div>
@@ -203,7 +191,7 @@ onMounted(() => { loadPresets(); load() })
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
-.field select { width: 100%; }
+.field .app-select { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 .visual { margin-top: var(--sp-3); }

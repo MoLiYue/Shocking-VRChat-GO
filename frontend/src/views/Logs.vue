@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated, nextTick } from 'vue'
 import { api } from '@/api'
 import { useI18n } from '@/i18n'
@@ -87,9 +88,7 @@ onUnmounted(stopWs)
     <div class="logs-header">
       <h1 class="gradient-text page-title">{{ t('logs.title') }}</h1>
       <div class="logs-controls">
-        <select v-model="filterLevel" class="filter-select">
-          <option v-for="lv in LEVELS" :key="lv" :value="lv">{{ lv.toUpperCase() }}</option>
-        </select>
+        <AppSelect v-model="filterLevel" class="filter-select" :options="[...(LEVELS).map((lv) => ({ value: lv, label: lv.toUpperCase() }))]" />
         <input type="text" v-model="filterText" :placeholder="t('logs.filter')" class="filter-input">
         <label class="auto-scroll-check">
           <input type="checkbox" class="switch" role="switch" v-model="autoScroll">
@@ -115,7 +114,7 @@ onUnmounted(stopWs)
 .logs-header { display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-3); flex-wrap: wrap; }
 .logs-header h1 { margin: 0; white-space: nowrap; }
 .logs-controls { display: flex; align-items: center; gap: var(--sp-2); flex: 1; flex-wrap: wrap; }
-.filter-select { width: 100px; font-size: var(--text-xs); padding: var(--sp-1) var(--sp-2); }
+.filter-select { width: 120px; min-width: 0; }
 .filter-input { flex: 1; min-width: 120px; max-width: 250px; font-size: var(--text-xs); padding: var(--sp-1) var(--sp-2); font-family: var(--font-mono); }
 .auto-scroll-check { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--text-xs); color: var(--text-muted); cursor: pointer; white-space: nowrap; }
 .auto-scroll-check input { accent-color: var(--accent); }

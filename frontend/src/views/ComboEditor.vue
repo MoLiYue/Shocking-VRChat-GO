@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
@@ -85,7 +86,7 @@ onMounted(() => { loadPresets(); loadCombo() })
         </div>
         <div class="field">
           <label>{{ t('common.wavePreset') }}</label>
-          <select v-model="shockPreset"><option value="">{{ t('common.default') }}</option><option v-for="p in presets" :key="p" :value="p">{{ p }}</option></select>
+          <AppSelect v-model="shockPreset" :options="[{ value: '', label: t('common.default') }, ...(presets).map((p) => ({ value: p, label: p }))]" />
         </div>
         <div class="field">
           <label>{{ t('common.waveScale') }}: {{ shockScale.toFixed(2) }}</label>
@@ -95,7 +96,7 @@ onMounted(() => { loadPresets(); loadCombo() })
         <h2>{{ t('combo.touchParams') }}</h2>
         <div class="field">
           <label>{{ t('common.wavePreset') }}</label>
-          <select v-model="touchPreset"><option value="">{{ t('common.default') }}</option><option v-for="p in presets" :key="p" :value="p">{{ p }}</option></select>
+          <AppSelect v-model="touchPreset" :options="[{ value: '', label: t('common.default') }, ...(presets).map((p) => ({ value: p, label: p }))]" />
         </div>
         <div class="field">
           <label>{{ t('common.waveScale') }}: {{ touchScale.toFixed(2) }}</label>
@@ -103,12 +104,7 @@ onMounted(() => { loadPresets(); loadCombo() })
         </div>
         <div class="field">
           <label>{{ t('combo.derivative') }}</label>
-          <select v-model.number="touchDerivative">
-            <option :value="0">{{ t('combo.deriv0') }}</option>
-            <option :value="1">{{ t('combo.deriv1') }}</option>
-            <option :value="2">{{ t('combo.deriv2') }}</option>
-            <option :value="3">{{ t('combo.deriv3') }}</option>
-          </select>
+          <AppSelect v-model="touchDerivative" :options="[{ value: 0, label: t('combo.deriv0') }, { value: 1, label: t('combo.deriv1') }, { value: 2, label: t('combo.deriv2') }, { value: 3, label: t('combo.deriv3') }]" />
         </div>
 
         <div class="save-bar">
@@ -147,7 +143,7 @@ onMounted(() => { loadPresets(); loadCombo() })
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
-.field select { width: 100%; }
+.field .app-select { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .diagram { display: flex; align-items: stretch; height: 100px; gap: 2px; margin-bottom: var(--sp-4); }
 .phase { flex: 1; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); text-align: center; font-size: var(--text-sm); line-height: 1.4; }

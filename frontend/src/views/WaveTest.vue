@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { canvasFont, themeColor } from '@/canvasFont'
 import { Play, Square } from 'lucide-vue-next'
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
@@ -549,10 +550,7 @@ onUnmounted(() => {
         <div class="field">
           <label>{{ t('common.wavePreset') }}</label>
           <div class="preset-row">
-            <select v-model="preset">
-              <option value="">{{ t('waveTest.presetDefault') }}</option>
-              <option v-for="p in presets" :key="p" :value="p">{{ p.replace(/^pulse-/, '').replace(/-\d+$/, '') }}</option>
-            </select>
+            <AppSelect v-model="preset" :options="[{ value: '', label: t('waveTest.presetDefault') }, ...(presets).map((p) => ({ value: p, label: p.replace(/^pulse-/, '').replace(/-\d+$/, '') }))]" />
             <button class="btn btn-ghost btn-sm" @click="triggerImport">{{ t('waveTest.import') }}</button>
           </div>
           <p class="import-msg" v-if="importMsg">{{ importMsg }}</p>
@@ -601,11 +599,11 @@ onUnmounted(() => {
 .field:last-child { margin-bottom: 0; }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
-.field select { width: 100%; }
+.field .app-select { width: 100%; }
 .val { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 600; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 .preset-row { display: flex; gap: var(--sp-2); align-items: center; }
-.preset-row select { flex: 1; }
+.preset-row .app-select { flex: 1; }
 .import-msg { font-size: var(--text-xs); margin-top: var(--sp-1); color: var(--text-secondary); }
 .channel-tabs { display: flex; gap: var(--sp-2); }
 .channel-tabs button { padding: var(--sp-2) var(--sp-5); border: 1px solid var(--border); border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); font-weight: 500; transition: var(--transition-props); }

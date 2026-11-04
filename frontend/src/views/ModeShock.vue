@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
@@ -83,10 +84,7 @@ onMounted(() => { loadPresets(); load() })
         </div>
         <div class="field">
           <label>{{ t('common.wavePreset') }}</label>
-          <select v-model="wavePreset">
-            <option value="">{{ t('modeShock.presetDefault') }}</option>
-            <option v-for="p in presets" :key="p" :value="p">{{ p }}</option>
-          </select>
+          <AppSelect v-model="wavePreset" :options="[{ value: '', label: t('modeShock.presetDefault') }, ...(presets).map((p) => ({ value: p, label: p }))]" />
         </div>
         <div class="field">
           <label>{{ t('common.waveScale') }}: {{ (waveScale * 100).toFixed(0) }}%</label>
@@ -153,7 +151,7 @@ onMounted(() => { loadPresets(); load() })
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
-.field select, .field input[type="number"] { width: 100%; }
+.field .app-select, .field input[type="number"] { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 .visual { margin-top: var(--sp-3); }

@@ -462,84 +462,86 @@ kbd {
    Same purple identity, readable on white. Only tokens change; components
    must use variables, never dark literals. */
 [data-theme="light"] {
-  /* ===== Catppuccin Latte (light) ===== */
-  --ctp-rosewater: #dc8a78; --ctp-flamingo: #dd7878; --ctp-pink: #ea76cb; --ctp-mauve: #8839ef;
-  --ctp-red: #d20f39; --ctp-maroon: #e64553; --ctp-peach: #fe640b; --ctp-yellow: #df8e1d;
-  --ctp-green: #40a02b; --ctp-teal: #179299; --ctp-sky: #04a5e5; --ctp-sapphire: #209fb5;
-  --ctp-blue: #1e66f5; --ctp-lavender: #7287fd;
-  --ctp-text: #4c4f69; --ctp-subtext1: #5c5f77; --ctp-subtext0: #6c6f85;
-  --ctp-overlay2: #7c7f93; --ctp-overlay1: #8c8fa1; --ctp-overlay0: #9ca0b0;
-  --ctp-surface2: #acb0be; --ctp-surface1: #bcc0cc; --ctp-surface0: #ccd0da;
-  --ctp-base: #eff1f5; --ctp-mantle: #e6e9ef; --ctp-crust: #dce0e8;
+  /* ===== Rosé Pine Dawn (light) — https://rosepinetheme.com/palette =====
+     Accent: Pine. Channel A: Rose, channel B: Foam (mirrors Peach / Teal
+     in the dark theme). Rosé Pine has no green: success uses Foam. */
+  --rp-base: #faf4ed; --rp-surface: #fffaf3; --rp-overlay: #f2e9e1;
+  --rp-muted: #9893a5; --rp-subtle: #797593; --rp-text: #575279;
+  --rp-love: #b4637a; --rp-gold: #ea9d34; --rp-rose: #d7827e;
+  --rp-pine: #286983; --rp-foam: #56949f; --rp-iris: #907aa9;
+  --rp-hl-low: #f4ede8; --rp-hl-med: #dfdad9; --rp-hl-high: #cecacd;
 
-  --accent-rgb: 30, 102, 245;
-  --red-rgb: 210, 15, 57;
-  --green-rgb: 64, 160, 43;
-  --yellow-rgb: 223, 142, 29;
-  --info-rgb: 32, 159, 181;
-  --pink-rgb: 234, 118, 203;
-  --peach-rgb: 254, 100, 11;
-  --teal-rgb: 23, 146, 153;
-  --overlay-rgb: 140, 143, 161;
-  --shadow-rgb: 76, 79, 105;
+  --accent-rgb: 40, 105, 131;    /* pine */
+  --red-rgb: 180, 99, 122;       /* love */
+  --green-rgb: 86, 148, 159;     /* foam */
+  --yellow-rgb: 234, 157, 52;    /* gold */
+  --info-rgb: 86, 148, 159;      /* foam */
+  --pink-rgb: 215, 130, 126;     /* rose */
+  --peach-rgb: 215, 130, 126;    /* rose */
+  --teal-rgb: 86, 148, 159;      /* foam */
+  --overlay-rgb: 152, 147, 165;  /* muted */
+  --shadow-rgb: 87, 82, 121;     /* text */
 
   color-scheme: light;
-  --bg-base: var(--ctp-mantle);
-  --bg-surface: var(--ctp-base);
-  --bg-card: var(--ctp-base);
-  --bg-card-hover: #f5f6f9;
-  --bg-tertiary: var(--ctp-mantle);
-  --bg-elevated: var(--ctp-mantle);
-  --bg-inset: var(--ctp-mantle);
-  --bg-sidebar: var(--ctp-crust);
-  --bg-hover: rgba(var(--overlay-rgb), 0.18);
-  --bg-active: rgba(var(--accent-rgb), 0.12);
-  --bg-input: #f8f9fb;
-  --bg-popover: var(--ctp-base);
-  --bg-toast: var(--ctp-base);
-  --bg-sticky: var(--ctp-base);
+  --bg-base: var(--rp-base);
+  --bg-surface: var(--rp-surface);
+  --bg-card: var(--rp-surface);
+  --bg-card-hover: #fffdf9;
+  --bg-tertiary: var(--rp-overlay);
+  --bg-elevated: var(--rp-overlay);
+  --bg-inset: var(--rp-hl-low);
+  --bg-sidebar: var(--rp-overlay);
+  --bg-hover: rgba(var(--overlay-rgb), 0.16);
+  --bg-active: rgba(var(--accent-rgb), 0.1);
+  --bg-input: var(--rp-surface);
+  --bg-popover: var(--rp-surface);
+  --bg-toast: var(--rp-surface);
+  --bg-sticky: var(--rp-surface);
   --bg-ghost: rgba(var(--overlay-rgb), 0.14);
-  --bg-ghost-hover: rgba(var(--overlay-rgb), 0.26);
-  --border: rgba(var(--overlay-rgb), 0.4);
-  --border-hover: rgba(var(--accent-rgb), 0.5);
-  --border-subtle: rgba(var(--overlay-rgb), 0.25);
+  --bg-ghost-hover: rgba(var(--overlay-rgb), 0.24);
+  --border: var(--rp-hl-med);
+  --border-hover: rgba(var(--accent-rgb), 0.45);
+  --border-subtle: var(--rp-hl-low);
 
-  --text: var(--ctp-text);
-  --text-label: var(--ctp-subtext1);
-  --text-secondary: var(--ctp-blue);
-  --text-muted: var(--ctp-subtext0);
-  --text-on-accent: #ffffff;
-  --accent: var(--ctp-blue);
-  --accent-hover: #3b7af7;
-  --accent-2: var(--ctp-pink);
-  --success: var(--ctp-green);
-  --danger: var(--ctp-red);
-  --warning: var(--ctp-yellow);
-  --info: var(--ctp-sapphire);
-  --ch-a-color: var(--ctp-peach);
-  --ch-b-color: var(--ctp-teal);
+  --text: var(--rp-text);
+  --text-label: #625d82;
+  --text-secondary: var(--rp-pine);
+  --text-muted: #6e6a86;           /* subtle, deepened to 4.7:1 */
+  --text-on-accent: #fffaf3;
+  --accent: var(--rp-pine);
+  --accent-hover: #317b99;
+  --accent-2: var(--rp-rose);
+  --purple: var(--rp-iris);
+  --success: #3e7c87;              /* foam, deepened for text */
+  --danger: #9e4f68;               /* love, deepened for text */
+  --warning: #8f5f17;              /* gold, deepened for text */
+  --info: #3e7c87;
+  --ch-a-color: #ad5c57;           /* rose, deepened for small text */
+  --ch-b-color: #3e7c87;           /* foam, deepened for small text */
   --info-surface: rgba(var(--info-rgb), 0.1);
-  --danger-surface: rgba(var(--red-rgb), 0.08);
-  --success-surface: rgba(var(--green-rgb), 0.1);
-  --warning-surface: rgba(var(--yellow-rgb), 0.1);
-  --warning-border: rgba(var(--yellow-rgb), 0.4);
-  --ch-a-surface: rgba(var(--peach-rgb), 0.12);
-  --ch-b-surface: rgba(var(--teal-rgb), 0.12);
+  --danger-surface: rgba(var(--red-rgb), 0.1);
+  --success-surface: rgba(var(--green-rgb), 0.12);
+  --warning-surface: rgba(var(--yellow-rgb), 0.12);
+  --warning-border: rgba(var(--yellow-rgb), 0.45);
+  --ch-a-surface: rgba(var(--peach-rgb), 0.14);
+  --ch-b-surface: rgba(var(--teal-rgb), 0.14);
+  --gradient-text: linear-gradient(135deg, var(--rp-pine), var(--rp-foam));
+  --gradient-brand: linear-gradient(135deg, var(--rp-rose), var(--rp-love));
 
-  --overlay: rgba(var(--shadow-rgb), 0.3);
-  --shadow: 0 8px 24px rgba(var(--shadow-rgb), 0.1);
-  --shadow-pop: 0 24px 64px rgba(var(--shadow-rgb), 0.2);
-  --shadow-float: 0 8px 24px rgba(var(--shadow-rgb), 0.15);
+  --overlay: rgba(var(--shadow-rgb), 0.25);
+  --shadow: 0 8px 24px rgba(var(--shadow-rgb), 0.08);
+  --shadow-pop: 0 18px 48px rgba(var(--shadow-rgb), 0.16);
+  --shadow-float: 0 8px 24px rgba(var(--shadow-rgb), 0.12);
   --glow-sm: 0 0 0 transparent;
   --glow-md: 0 0 0 transparent;
-  --track: var(--ctp-surface0);
-  --switch-off: var(--ctp-surface2);
-  --scrollbar: var(--ctp-surface1);
-  --scrollbar-hover: var(--ctp-surface2);
-  --canvas-bg: var(--ctp-mantle);
-  --canvas-grid: rgba(var(--overlay-rgb), 0.3);
-  --canvas-text: var(--ctp-subtext0);
-  --canvas-line: var(--ctp-blue);
+  --track: var(--rp-hl-med);
+  --switch-off: var(--rp-hl-high);
+  --scrollbar: var(--rp-hl-med);
+  --scrollbar-hover: var(--rp-hl-high);
+  --canvas-bg: var(--rp-hl-low);
+  --canvas-grid: rgba(var(--overlay-rgb), 0.28);
+  --canvas-text: var(--rp-subtle);
+  --canvas-line: var(--rp-pine);
 }
 [data-theme="light"] .card { box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.06); }
 [data-theme="light"] select option { background: #fff; color: var(--text); }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { canvasFont, themeColor } from '@/canvasFont'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw, X } from 'lucide-vue-next'
@@ -328,10 +329,7 @@ onMounted(() => {
         <h2>{{ t('modeDistance.waveParams') }}</h2>
         <div class="field">
           <label>{{ t('common.wavePreset') }}</label>
-          <select v-model="wavePreset">
-            <option value="">{{ t('modeDistance.presetNone') }}</option>
-            <option v-for="p in presets" :key="p" :value="p">{{ p }}</option>
-          </select>
+          <AppSelect v-model="wavePreset" :options="[{ value: '', label: t('modeDistance.presetNone') }, ...(presets).map((p) => ({ value: p, label: p }))]" />
           <p class="hint">{{ t('modeDistance.presetHint') }}</p>
         </div>
         <div class="field">
@@ -399,12 +397,7 @@ onMounted(() => {
           </div>
           <div class="field">
             <label>{{ t('modeDistance.envelope') }}</label>
-            <select v-model="envelopeCurve">
-              <option value="smoothstep">smoothstep</option>
-              <option value="linear">linear</option>
-              <option value="ease_in">ease_in</option>
-              <option value="ease_out">ease_out</option>
-            </select>
+            <AppSelect v-model="envelopeCurve" :options="[{ value: 'smoothstep', label: 'smoothstep' }, { value: 'linear', label: 'linear' }, { value: 'ease_in', label: 'ease_in' }, { value: 'ease_out', label: 'ease_out' }]" />
           </div>
         </template>
       </section>
@@ -434,11 +427,7 @@ onMounted(() => {
 
     <div class="param-selector">
       <label>{{ t('modeDistance.curveParam') }}:</label>
-      <select v-model="activeParam" @change="loadCurve()">
-        <option v-for="p in paramList" :key="p" :value="p">
-          {{ paramLabel(p) }}{{ hasCurve(p) ? ' ●' : '' }}
-        </option>
-      </select>
+      <AppSelect v-model="activeParam" @change="loadCurve()" :options="[...(paramList).map((p) => ({ value: p, label: `${paramLabel(p)}${hasCurve(p) ? ' ●' : ''}` }))]" />
       <span class="curve-status" v-if="activeParam">
         {{ hasCurve(activeParam) ? t('modeDistance.curveCustom') : t('modeDistance.curveDefault') }}
       </span>
@@ -492,7 +481,7 @@ onMounted(() => {
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
-.field select, .field input[type="number"] { width: 100%; }
+.field .app-select, .field input[type="number"] { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 .visual { margin-top: var(--sp-3); }
@@ -506,7 +495,7 @@ onMounted(() => {
 /* Curve editor */
 .param-selector { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
 .param-selector label { font-size: var(--text-sm); color: var(--text-muted); font-weight: 500; white-space: nowrap; }
-.param-selector select { flex: 1; max-width: 400px; }
+.param-selector .app-select { flex: 1; max-width: 400px; }
 .curve-status { font-size: var(--text-xs); color: var(--accent); white-space: nowrap; }
 
 .editor-grid { display: grid; grid-template-columns: 1fr 240px; gap: var(--sp-4); align-items: start; }

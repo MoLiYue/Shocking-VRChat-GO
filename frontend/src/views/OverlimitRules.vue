@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
@@ -116,18 +117,12 @@ onMounted(load)
           <div class="condition-row">
             <span class="cond-label">{{ t('overlimit.when') }}</span>
             <input type="text" v-model="rule.condition.param" class="cond-param" placeholder="/avatar/parameters/...">
-            <select v-model="rule.condition.operator" class="cond-op">
-              <option v-for="op in operators" :key="op" :value="op">{{ op }}</option>
-            </select>
+            <AppSelect v-model="rule.condition.operator" class="cond-op" :options="[...(operators).map((op) => ({ value: op, label: op }))]" />
             <input type="number" v-model.number="rule.condition.value" class="cond-value" step="0.01">
           </div>
           <div class="effect-row">
             <span class="cond-label">{{ t('overlimit.then') }}</span>
-            <select v-model="rule.channel" class="effect-channel">
-              <option value="a">{{ t('overlimit.channelAOption') }}</option>
-              <option value="b">{{ t('overlimit.channelBOption') }}</option>
-              <option value="both">{{ t('overlimit.channelBothOption') }}</option>
-            </select>
+            <AppSelect v-model="rule.channel" class="effect-channel" :options="[{ value: 'a', label: t('overlimit.channelAOption') }, { value: 'b', label: t('overlimit.channelBOption') }, { value: 'both', label: t('overlimit.channelBothOption') }]" />
             <span class="effect-text">{{ t('overlimit.limitBoostTo') }}</span>
             <input type="number" v-model.number="rule.limit_value" min="0" max="200" class="effect-value">
           </div>
@@ -183,9 +178,9 @@ onMounted(load)
 .condition-row, .effect-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .cond-label { font-size: var(--text-sm); color: var(--accent); font-weight: 600; min-width: 24px; }
 .cond-param { flex: 1; min-width: 200px; font-size: var(--text-sm); }
-.cond-op { width: 64px; text-align: center; font-size: var(--text-sm); }
+.cond-op { width: 84px; min-width: 0; }
 .cond-value { width: 80px; text-align: center; font-size: var(--text-sm); }
-.effect-channel { width: 100px; font-size: var(--text-sm); }
+.effect-channel { width: 130px; min-width: 0; }
 .effect-text { font-size: var(--text-sm); color: var(--text-secondary); }
 .effect-value { width: 80px; text-align: center; font-size: var(--text-sm); font-weight: 600; }
 .msg { font-size: var(--text-sm); color: var(--text-muted); }
