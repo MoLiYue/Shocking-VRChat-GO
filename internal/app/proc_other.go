@@ -15,3 +15,6 @@ func spawnDetached(name string, args []string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd.Start()
 }
+
+// spawnHiddenConsole is spawnDetached on non-Windows platforms.
+func spawnHiddenConsole(name string, args []string) error { return spawnDetached(name, args) }

@@ -568,3 +568,46 @@ func TestUILocale(t *testing.T) {
 		t.Fatal("locale not saved")
 	}
 }
+
+func TestUpdateScript(t *testing.T) {
+	s := updateScript(1234, `C:\SV 中文`, `C:\SV 中文\shocking_vrchat.exe`, `C:\T\x\pkg`, `C:\T`)
+	for _, want := range []string{
+		`tasklist /FI "PID eq 1234" /NH 2>nul | find /I "shocking_vrchat.exe"`,
+		"/R:10 /W:1",           // no endless robocopy retry
+		`"settings-v0.2.yaml"`, // config never overwritten
+		`/XC /XN /XO`,          // presets: add only
+		`start "" "C:\SV 中文\shocking_vrchat.exe"`,
+		`rmdir /s /q "C:\T"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("script missing %q", want)
+		}
+	}
+	if strings.Contains(s, "timeout ") {
+		t.Error("timeout needs an interactive console; use ping for delays")
+	}
+	if strings.Contains(s, "pause") {
+		t.Error("hidden updater must never pause")
+	}
+	if !strings.Contains(s, "\r\n") {
+		t.Error("batch file needs CRLF")
+	}
+}
+
+func TestReleasePageFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/MoLiYue/Shocking-VRChat-GO/releases/tag/v9.9.9", http.StatusFound)
+	}))
+	defer srv.Close()
+	a := New(t.TempDir())
+	a.Cfg.Write(func(adv, _ config.M) { config.Sub(adv, true, "general")["github_mirror"] = srv.URL })
+	tag, err := a.latestTagFromPage()
+	if err != nil || tag != "v9.9.9" {
+		t.Fatalf("tag=%q err=%v", tag, err)
+	}
+	r, err := a.checkViaReleasePage()
+	if err != nil || r["update_available"] != true ||
+		r["download_url"] != "https://github.com/"+GitHubRepo+"/releases/download/v9.9.9/shocking_vrchat_go_windows_x64.zip" {
+		t.Fatal(r, err)
+	}
+}
