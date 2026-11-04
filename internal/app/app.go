@@ -22,7 +22,7 @@ import (
 )
 
 // Version is the application version (overridable with -ldflags -X).
-var Version = "0.7.1"
+var Version = "0.7.2"
 
 // GitHubRepo is the release source for the auto-updater.
 var GitHubRepo = "MoLiYue/Shocking-VRChat-GO"
@@ -81,6 +81,8 @@ type App struct {
 	TrayAvailable bool
 	// OnShowWindow brings the UI to the front (second instance / tray).
 	OnShowWindow func()
+	// OnTheme applies the UI theme to native chrome (title bar).
+	OnTheme func(dark bool)
 }
 
 // New constructs the application rooted at baseDir.
@@ -164,6 +166,11 @@ func (a *App) limitsFromSettings() device.Limits {
 }
 
 func (a *App) refreshLimits() { a.Hub.RefreshLimits(a.limitsFromSettings()) }
+
+// UIThemeDark reports whether the last UI theme was dark.
+func (a *App) UIThemeDark() bool {
+	return config.Str(a.Cfg.Get("general", "ui_theme"), "dark") != "light"
+}
 
 // UILocale is the language last chosen in the UI ("zh" or "en"), used for
 // native strings such as the tray menu.
