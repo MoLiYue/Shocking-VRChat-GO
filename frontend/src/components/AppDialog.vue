@@ -81,7 +81,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 .dlg-enter-from .dlg, .dlg-leave-to .dlg { transform: scale(0.96); opacity: 0; }
 
 .toasts {
-  position: fixed; right: var(--sp-6); bottom: var(--sp-6); z-index: 1001;
+  /* Sits above the sticky save bar (~64px tall) so it never covers it */
+  position: fixed; right: var(--sp-6); bottom: 96px; z-index: 1001;
   display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-end;
   pointer-events: none;
 }

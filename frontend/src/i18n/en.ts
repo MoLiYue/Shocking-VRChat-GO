@@ -231,6 +231,13 @@ export default {
   },
   // Param manager
   params: {
+    errEmpty: 'Path cannot be empty',
+    errBadPath: 'Invalid path (no spaces, #, commas or brackets; must not end with /)',
+    errBadMode: 'Unknown mode',
+    fixErrors: '{n} parameter(s) need fixing before saving',
+    appliedLive: 'Saved and applied',
+    saving: 'Saving…',
+    liveHint: 'Changes apply immediately without interrupting output',
     strengthLimitEdit: 'Edit in Strength',
     strengthLimitHint: 'Strength limits are managed on the Strength page',
     title: 'Parameters',

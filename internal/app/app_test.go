@@ -18,6 +18,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"shockingvrc/internal/config"
+	"shockingvrc/internal/handler"
 	"shockingvrc/internal/osc"
 )
 
@@ -623,4 +624,81 @@ func TestUITheme(t *testing.T) {
 	if e.a.UIThemeDark() || len(got) != 1 || got[0] {
 		t.Fatal(got)
 	}
+}
+
+func TestParamsValidation(t *testing.T) {
+	e := newEnv(t)
+	r := e.postJSON(t, "/api/v1/params", map[string]any{
+		"a": map[string]any{"params": []any{
+			map[string]any{"path": "Shock/X", "mode": "distance"},
+			map[string]any{"path": "/avatar/parameters/Shock/X", "mode": "touch"}, // duplicate after prefixing
+			map[string]any{"path": "", "mode": "distance"},
+			map[string]any{"path": "Bad Path", "mode": "distance"},
+			map[string]any{"path": "Shock/Y", "mode": "nope"},
+		}},
+	})
+	if r["_status"] != 400 {
+		t.Fatal(r)
+	}
+	codes := map[int]string{}
+	for _, x := range config.AsList(r["errors"]) {
+		m := config.AsMap(x)
+		codes[config.Int(m["index"], -1)] = config.Str(m["code"], "")
+	}
+	want := map[int]string{1: "duplicate", 2: "empty_path", 3: "bad_path", 4: "bad_mode"}
+	for i, c := range want {
+		if codes[i] != c {
+			t.Errorf("row %d: got %q want %q (all %v)", i, codes[i], c, codes)
+		}
+	}
+	// nothing was saved
+	if l := config.AsList(e.a.Cfg.GetBasic("dglab3", "channel_a", "avatar_params")); len(l) != 4 {
+		t.Fatalf("config changed on validation error: %v", l)
+	}
+}
+
+func TestParamsSaveAllAppliesLive(t *testing.T) {
+	e := newEnv(t)
+	before := map[string]*handler.Shock{}
+	for _, h := range e.a.Engine.Handlers() {
+		before[h.Channel+"/"+h.Mode] = h
+	}
+	srvBefore := e.a.Engine.oscSrv
+	r := e.postJSON(t, "/api/v1/params", map[string]any{
+		"a": map[string]any{"params": []any{
+			map[string]any{"path": "Shock/TouchAreaA", "mode": "distance"},
+			map[string]any{"path": "Shock/NewShock", "mode": "shock"},
+		}, "default_mode": "distance"},
+		"b": map[string]any{"params": []any{}},
+	})
+	if r["success"] != true {
+		t.Fatal(r)
+	}
+	if e.a.Engine.oscSrv != srvBefore {
+		t.Fatal("OSC server was recreated")
+	}
+	after := map[string]*handler.Shock{}
+	for _, h := range e.a.Engine.Handlers() {
+		after[h.Channel+"/"+h.Mode] = h
+	}
+	if after["A/distance"] == nil || after["A/distance"] != before["A/distance"] {
+		t.Fatal("unchanged handler was not reused")
+	}
+	if after["A/shock"] == nil || after["B/distance"] != nil {
+		t.Fatalf("handler set wrong: %v", after)
+	}
+	// new route works immediately
+	c, _ := osc.NewClient("127.0.0.1", e.oscPort)
+	defer c.Close()
+	_ = c.Send("/avatar/parameters/Shock/NewShock", float32(0.9))
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, ev := range e.a.activity.list() {
+			if ev.Address == "/avatar/parameters/Shock/NewShock" && ev.Mode == "shock" {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("new param not routed after live apply")
 }

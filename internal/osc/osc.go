@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"shockingvrc/internal/logx"
 )
@@ -302,10 +303,11 @@ func (d *Dispatcher) Dispatch(m Message) bool {
 	return matched
 }
 
-// Server is a UDP OSC listener.
+// Server is a UDP OSC listener. Its dispatcher can be swapped at runtime
+// (SetDispatcher) so routing changes do not require reopening the socket.
 type Server struct {
 	conn *net.UDPConn
-	d    *Dispatcher
+	d    atomic.Pointer[Dispatcher]
 	wg   sync.WaitGroup
 }
 
@@ -320,7 +322,8 @@ func Listen(host string, port int, d *Dispatcher) (*Server, error) {
 		return nil, err
 	}
 	_ = c.SetReadBuffer(1 << 20)
-	s := &Server{conn: c, d: d}
+	s := &Server{conn: c}
+	s.d.Store(d)
 	s.wg.Add(1)
 	go s.loop()
 	return s, nil
@@ -353,8 +356,11 @@ func (s *Server) dispatchSafe(m Message) {
 			logx.Error("[osc] handler panic for %s: %v", m.Address, r)
 		}
 	}()
-	s.d.Dispatch(m)
+	s.d.Load().Dispatch(m)
 }
+
+// SetDispatcher atomically replaces the routing table.
+func (s *Server) SetDispatcher(d *Dispatcher) { s.d.Store(d) }
 
 // LocalAddr returns the bound address.
 func (s *Server) LocalAddr() net.Addr { return s.conn.LocalAddr() }

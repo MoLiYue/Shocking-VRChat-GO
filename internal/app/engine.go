@@ -44,7 +44,9 @@ func (e *Engine) Handlers() []*handler.Shock {
 	return append([]*handler.Shock{}, e.handlers...)
 }
 
-func (e *Engine) build() (*osc.Dispatcher, []*handler.Shock) {
+// build creates the routing table. Handlers in reuse (keyed "A/shock")
+// are kept, so their in-flight state survives a reconfiguration.
+func (e *Engine) build(reuse map[string]*handler.Shock) (*osc.Dispatcher, []*handler.Shock) {
 	a := e.a
 	d := &osc.Dispatcher{Hook: a.oscGlobalHook}
 	deps := &handler.Deps{
@@ -55,6 +57,7 @@ func (e *Engine) build() (*osc.Dispatcher, []*handler.Shock) {
 	var hs []*handler.Shock
 	for _, ch := range []string{"A", "B"} {
 		byMode := map[string]*handler.Shock{}
+		active := 0
 		params := config.AsList(a.Cfg.Get("dglab3", config.ChannelKey(ch), "avatar_params"))
 		for _, p := range params {
 			pm := config.AsMap(p)
@@ -63,26 +66,74 @@ func (e *Engine) build() (*osc.Dispatcher, []*handler.Shock) {
 			}
 			path := config.Str(pm["path"], "")
 			if !config.Bool(pm["enabled"], true) {
-				logx.Info("[engine] Channel %s skipping disabled param: %s", ch, path)
+				logx.Debug("[engine] Channel %s skipping disabled param: %s", ch, path)
 				continue
 			}
 			mode := config.Str(pm["mode"], "distance")
 			h := byMode[mode]
 			if h == nil {
-				var err error
-				h, err = handler.New(deps, ch, mode)
-				if err != nil {
-					logx.Error("[engine] Channel %s param %s: %v", ch, path, err)
-					continue
+				if old := reuse[ch+"/"+mode]; old != nil {
+					h = old
+				} else {
+					var err error
+					h, err = handler.New(deps, ch, mode)
+					if err != nil {
+						logx.Error("[engine] Channel %s param %s: %v", ch, path, err)
+						continue
+					}
 				}
 				byMode[mode] = h
 				hs = append(hs, h)
 			}
-			logx.Info("[engine] Channel %s mode %s listening %s", ch, mode, path)
+			logx.Debug("[engine] Channel %s mode %s listening %s", ch, mode, path)
 			d.Map(path, h.OSC)
+			active++
 		}
+		logx.Info("[engine] Channel %s: %d active params", ch, active)
 	}
 	return d, hs
+}
+
+// Reconfigure applies avatar_params changes without restarting: the OSC
+// socket and WS server stay up, the routing table is swapped atomically,
+// unchanged handlers keep their state, only added/removed ones start/stop.
+func (e *Engine) Reconfigure() {
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	if !e.Running() {
+		e.start()
+		return
+	}
+	e.stateMu.Lock()
+	old := map[string]*handler.Shock{}
+	for _, h := range e.handlers {
+		old[h.Channel+"/"+h.Mode] = h
+	}
+	srv := e.oscSrv
+	e.stateMu.Unlock()
+
+	d, hs := e.build(old)
+	keep := map[*handler.Shock]bool{}
+	for _, h := range hs {
+		if old[h.Channel+"/"+h.Mode] == h {
+			keep[h] = true
+		} else {
+			h.Start()
+		}
+	}
+	srv.SetDispatcher(d)
+	e.stateMu.Lock()
+	e.handlers = hs
+	e.stateMu.Unlock()
+	stopped := 0
+	for _, h := range old {
+		if !keep[h] {
+			h.Stop()
+			stopped++
+		}
+	}
+	logx.Success("[engine] Parameters applied live (%d handlers, %d new, %d removed)",
+		len(hs), len(hs)-len(keep), stopped)
 }
 
 // Start starts the engine (no-op if running).
@@ -98,7 +149,7 @@ func (e *Engine) start() {
 		return
 	}
 	a := e.a
-	disp, hs := e.build()
+	disp, hs := e.build(nil)
 	a.Queue.Clear()
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -523,20 +574,17 @@ func (a *App) hotReload() {
 // applySettings swaps in new trees and restarts only what is needed.
 func (a *App) applySettings(adv, basic config.M) {
 	oldAdv, oldBasic := a.Cfg.Snapshot()
-	engineRestart, wsRestart := false, false
+	engineRestart, wsRestart, paramsChanged := false, false, false
 	if !config.Equal(adv["osc"], oldAdv["osc"]) {
 		engineRestart = true
 	}
 	if !config.Equal(adv["ws"], oldAdv["ws"]) {
 		wsRestart = true
 	}
-	if !config.Equal(adv["SERVER_IP"], oldAdv["SERVER_IP"]) {
-		engineRestart = true
-	}
 	for _, ch := range config.Channels {
 		if !config.Equal(config.Get(basic, "dglab3", ch, "avatar_params"), config.Get(oldBasic, "dglab3", ch, "avatar_params")) ||
 			!config.Equal(config.Get(basic, "dglab3", ch, "mode"), config.Get(oldBasic, "dglab3", ch, "mode")) {
-			engineRestart = true
+			paramsChanged = true
 		}
 	}
 	if !config.Equal(adv["web_server"], oldAdv["web_server"]) {
@@ -551,13 +599,20 @@ func (a *App) applySettings(adv, basic config.M) {
 	switch {
 	case wsRestart && !engineRestart:
 		logx.Info("[hot-reload] WS config changed, restarting WS server only...")
-		go a.Engine.RestartWS()
+		go func() {
+			a.Engine.RestartWS()
+			if paramsChanged {
+				a.Engine.Reconfigure()
+			}
+		}()
 	case wsRestart && engineRestart:
 		logx.Info("[hot-reload] OSC + WS config changed, full engine restart...")
 		go a.Engine.Restart(false)
 	case engineRestart:
-		logx.Info("[hot-reload] OSC/param config changed, restarting engine (preserving WS connections)...")
+		logx.Info("[hot-reload] OSC config changed, restarting engine (preserving WS connections)...")
 		go a.Engine.Restart(true)
+	case paramsChanged:
+		go a.Engine.Reconfigure()
 	}
 	logx.Success("[hot-reload] Configuration reloaded.")
 }

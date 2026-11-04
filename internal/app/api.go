@@ -29,6 +29,16 @@ type HTTPError struct {
 
 func (e *HTTPError) Error() string { return e.Detail }
 
+// HTTPErrorBody is an error response carrying extra JSON fields
+// (e.g. per-row validation errors) next to "detail".
+type HTTPErrorBody struct {
+	Code   int
+	Detail string
+	Extra  map[string]any
+}
+
+func (e *HTTPErrorBody) Error() string { return e.Detail }
+
 func httpErr(code int, format string, args ...any) error {
 	return &HTTPError{Code: code, Detail: fmt.Sprintf(format, args...)}
 }
@@ -53,6 +63,15 @@ func wrap(f apiFunc) http.HandlerFunc {
 		}()
 		v, err := f(r)
 		if err != nil {
+			var hb *HTTPErrorBody
+			if errors.As(err, &hb) {
+				body := map[string]any{"detail": hb.Detail}
+				for k, v := range hb.Extra {
+					body[k] = v
+				}
+				writeJSON(w, hb.Code, body)
+				return
+			}
 			var he *HTTPError
 			if errors.As(err, &he) {
 				writeJSON(w, he.Code, map[string]any{"detail": he.Detail})
@@ -258,6 +277,7 @@ func (a *App) Handler() http.Handler {
 	h("POST /api/v1/update/apply", a.apiUpdateApply)
 	h("GET /api/v1/params/{channel}", a.apiParamsGet)
 	h("POST /api/v1/params/{channel}", a.apiParamsSet)
+	h("POST /api/v1/params", a.apiParamsSetAll)
 	h("GET /api/v1/mode_config/{channel}/{mode}", a.apiModeConfigGet)
 	h("POST /api/v1/mode_config/{channel}/{mode}", a.apiModeConfigSet)
 	h("GET /api/v1/combo/{channel}", a.apiComboGet)

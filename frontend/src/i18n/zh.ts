@@ -231,6 +231,13 @@ export default {
   },
   // Param manager
   params: {
+    errEmpty: '路径不能为空',
+    errBadPath: '路径格式不正确（不能含空格、#、逗号、括号，不能以 / 结尾）',
+    errBadMode: '未知的工作模式',
+    fixErrors: '有 {n} 个参数需要修改后才能保存',
+    appliedLive: '已保存并立即生效',
+    saving: '保存中…',
+    liveHint: '保存后立即生效，不会中断正在进行的输出',
     strengthLimitEdit: '在强度设置中修改',
     strengthLimitHint: '强度上限统一在「强度设置」页调整',
     title: '参数管理',

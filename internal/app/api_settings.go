@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"shockingvrc/internal/config"
+	"shockingvrc/internal/handler"
 	"shockingvrc/internal/logx"
 	"shockingvrc/internal/sps"
 )
@@ -223,6 +224,119 @@ func (a *App) apiParamsGet(r *http.Request) (any, error) {
 	return out, nil
 }
 
+// paramError is one row-level validation problem returned to the UI.
+type paramError struct {
+	Channel string `json:"channel"`
+	Index   int    `json:"index"`
+	Code    string `json:"code"` // empty_path | bad_path | bad_mode | duplicate
+	Path    string `json:"path,omitempty"`
+}
+
+var validModes = func() map[string]bool {
+	m := map[string]bool{}
+	for _, x := range handler.Modes {
+		m[x] = true
+	}
+	return m
+}()
+
+// validateParams normalizes one channel's list and reports problems.
+// Short paths ("Shock/A") get the /avatar/parameters/ prefix.
+func validateParams(ch string, raw []any, defMode string) ([]any, []paramError) {
+	out := []any{}
+	var errs []paramError
+	seen := map[string]int{}
+	for i, p := range raw {
+		var path, mode string
+		enabled := true
+		switch t := p.(type) {
+		case string:
+			path, mode = t, defMode
+		case map[string]any:
+			path = config.Str(t["path"], "")
+			mode = config.Str(t["mode"], defMode)
+			if v, ok := t["enabled"]; ok {
+				enabled = config.Bool(v, true)
+			}
+		default:
+			errs = append(errs, paramError{ch, i, "bad_path", ""})
+			continue
+		}
+		path = strings.TrimSpace(path)
+		if path == "" {
+			errs = append(errs, paramError{ch, i, "empty_path", ""})
+			continue
+		}
+		if !strings.HasPrefix(path, "/") {
+			path = sps.AvatarParameterPrefix + path
+		}
+		if strings.ContainsAny(path, " \t#,?[]{}") || strings.HasSuffix(path, "/") {
+			errs = append(errs, paramError{ch, i, "bad_path", path})
+			continue
+		}
+		if !validModes[mode] {
+			errs = append(errs, paramError{ch, i, "bad_mode", path})
+			continue
+		}
+		if _, dup := seen[path]; dup {
+			errs = append(errs, paramError{ch, i, "duplicate", path})
+			continue
+		}
+		seen[path] = i
+		out = append(out, config.M{"path": path, "mode": mode, "enabled": enabled})
+	}
+	return out, errs
+}
+
+type channelParams struct {
+	key     string
+	params  []any
+	defMode any
+	hasMode bool
+	limit   any
+}
+
+// applyParams writes validated params for the given channels, saves once
+// and applies them live (no engine restart).
+func (a *App) applyParams(chs []channelParams) error {
+	var bad error
+	a.Cfg.Write(func(adv, basic config.M) {
+		for _, c := range chs {
+			bc := config.Sub(basic, true, "dglab3", c.key)
+			bc["avatar_params"] = c.params
+			if c.hasMode {
+				bc["mode"] = c.defMode
+			}
+			if c.limit != nil {
+				i, ok := config.ToInt(c.limit)
+				if !ok {
+					bad = fmt.Errorf("invalid literal for int(): %v", c.limit)
+					return
+				}
+				bc["strength_limit"] = config.ClampInt(i, 0, 200)
+			}
+			ac := config.Sub(adv, true, "dglab3", c.key)
+			ac["avatar_params"] = config.DeepCopy(c.params)
+			ac["mode"] = bc["mode"]
+			ac["strength_limit"] = bc["strength_limit"]
+			config.NormalizeAvatarParams(ac)
+		}
+	})
+	if bad != nil {
+		return bad
+	}
+	if err := a.Cfg.Save(); err != nil {
+		return err
+	}
+	a.refreshLimits()
+	a.Engine.Reconfigure()
+	return nil
+}
+
+func validationError(errs []paramError) error {
+	return &HTTPErrorBody{Code: 400, Detail: "invalid parameters", Extra: map[string]any{"errors": errs}}
+}
+
 func (a *App) apiParamsSet(r *http.Request) (any, error) {
 	ch, err := lowerChannel(r.PathValue("channel"))
 	if err != nil {
@@ -232,58 +346,56 @@ func (a *App) apiParamsSet(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := "channel_" + ch
-	validated := []any{}
-	for _, p := range config.AsList(data["params"]) {
-		switch t := p.(type) {
-		case string:
-			validated = append(validated, config.M{"path": t, "mode": config.Str(data["default_mode"], "distance"), "enabled": true})
-		case map[string]any:
-			path := config.Str(t["path"], "")
-			if path == "" {
-				continue
-			}
-			enabled := true
-			if v, ok := t["enabled"]; ok {
-				enabled = config.Bool(v, true)
-			}
-			validated = append(validated, config.M{"path": path, "mode": config.Str(t["mode"], "distance"), "enabled": enabled})
-		}
+	defMode := config.Str(data["default_mode"], config.Str(a.Cfg.GetBasic("dglab3", "channel_"+ch, "mode"), "distance"))
+	if !validModes[defMode] {
+		return nil, httpErr(400, "invalid default_mode: %s", defMode)
 	}
-	var bad error
-	a.Cfg.Write(func(adv, basic config.M) {
-		bc := config.Sub(basic, true, "dglab3", key)
-		bc["avatar_params"] = validated
-		if v, ok := data["default_mode"]; ok {
-			bc["mode"] = v
-		}
-		if v, ok := data["strength_limit"]; ok {
-			i, ok := config.ToInt(v)
-			if !ok {
-				bad = fmt.Errorf("invalid literal for int(): %v", v)
-				return
-			}
-			bc["strength_limit"] = i
-		}
-		ac := config.Sub(adv, true, "dglab3", key)
-		ac["avatar_params"] = config.DeepCopy(validated)
-		ac["mode"] = bc["mode"]
-		ac["strength_limit"] = bc["strength_limit"]
-		config.NormalizeAvatarParams(ac)
-	})
-	if bad != nil {
-		return nil, bad
+	params, errs := validateParams(ch, config.AsList(data["params"]), defMode)
+	if len(errs) > 0 {
+		return nil, validationError(errs)
 	}
-	if err := a.Cfg.Save(); err != nil {
+	_, hasMode := data["default_mode"]
+	if err := a.applyParams([]channelParams{{key: "channel_" + ch, params: params, defMode: defMode, hasMode: hasMode, limit: data["strength_limit"]}}); err != nil {
 		return nil, err
 	}
-	a.refreshLimits()
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		logx.Info("[params] Restarting engine to apply param changes (preserving WS)...")
-		a.Engine.Restart(true)
-	}()
-	return map[string]any{"success": true, "params": validated, "restarting": true}, nil
+	return map[string]any{"success": true, "params": params, "applied": true}, nil
+}
+
+// apiParamsSetAll saves both channels in one request:
+// {"a": {"params": [...], "default_mode": "distance"}, "b": {...}}
+func (a *App) apiParamsSetAll(r *http.Request) (any, error) {
+	data, err := readBody(r)
+	if err != nil {
+		return nil, err
+	}
+	var chs []channelParams
+	var errs []paramError
+	out := map[string]any{"success": true, "applied": true}
+	for _, ch := range []string{"a", "b"} {
+		cd := config.AsMap(data[ch])
+		if cd == nil {
+			continue
+		}
+		defMode := config.Str(cd["default_mode"], config.Str(a.Cfg.GetBasic("dglab3", "channel_"+ch, "mode"), "distance"))
+		if !validModes[defMode] {
+			return nil, httpErr(400, "invalid default_mode for channel %s: %s", ch, defMode)
+		}
+		params, e := validateParams(ch, config.AsList(cd["params"]), defMode)
+		errs = append(errs, e...)
+		_, hasMode := cd["default_mode"]
+		chs = append(chs, channelParams{key: "channel_" + ch, params: params, defMode: defMode, hasMode: hasMode})
+		out[ch] = params
+	}
+	if len(errs) > 0 {
+		return nil, validationError(errs)
+	}
+	if len(chs) == 0 {
+		return nil, httpErr(400, "nothing to save")
+	}
+	if err := a.applyParams(chs); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------- mode config
