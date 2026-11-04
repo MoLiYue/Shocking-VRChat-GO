@@ -333,9 +333,9 @@ td { padding: var(--sp-2); font-size: var(--text-sm); border-bottom: 1px solid v
 .mode-shock { background: var(--danger-surface); color: var(--danger); }
 .mode-touch { background: var(--success-surface); color: var(--success); }
 .mode-combo { background: var(--warning-surface); color: var(--warning); }
-.mode-boost { background: rgba(167,139,250,0.1); color: var(--purple); }
+.mode-boost { background: rgba(var(--accent-rgb), 0.1); color: var(--purple); }
 .actions { display: flex; gap: var(--sp-1); }
-.editing { background: rgba(99,102,241,0.04); }
+.editing { background: rgba(var(--accent-rgb), 0.04); }
 .disabled-row { opacity: 0.5; }
 .path-disabled { text-decoration: line-through; }
 .edit-input, .edit-select { padding: var(--sp-1) var(--sp-2); border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text); font-family: var(--font-mono); font-size: var(--text-xs); width: 100%; }

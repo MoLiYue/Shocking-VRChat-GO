@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useUnsaved } from '@/unsaved'
+import { themePref, setTheme, type ThemePref } from '@/theme'
 import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
 import { ref, onMounted, onUnmounted } from 'vue'
@@ -399,6 +400,21 @@ onUnmounted(() => { stopProgressPolling() })
         </div>
       </section>
 
+      <section class="card">
+        <h2>{{ t('settings.appearanceTitle') }}</h2>
+        <div class="field">
+          <label>{{ t('settings.theme') }}</label>
+          <div class="seg" role="radiogroup" :aria-label="t('settings.theme')">
+            <button
+              v-for="opt in (['system', 'dark', 'light'] as ThemePref[])" :key="opt"
+              role="radio" :aria-checked="themePref === opt"
+              :class="{ active: themePref === opt }" @click="setTheme(opt)"
+            >{{ t('settings.theme' + opt[0].toUpperCase() + opt.slice(1)) }}</button>
+          </div>
+          <p class="hint">{{ t('settings.themeHint') }}</p>
+        </div>
+      </section>
+
       <section v-if="trayAvailable" class="card">
         <h2>{{ t('settings.windowTitle') }}</h2>
         <div class="field">
@@ -584,16 +600,16 @@ onUnmounted(() => { stopProgressPolling() })
 .update-label { color: var(--text-muted); min-width: 80px; }
 .update-value { color: var(--text-secondary); }
 .update-value.has-update { color: var(--accent); font-weight: 600; }
-.update-badge { display: inline-block; margin-left: var(--sp-2); padding: 1px 8px; border-radius: 99px; background: rgba(139,92,246,0.15); color: var(--accent); font-size: var(--text-xs); font-weight: 600; }
+.update-badge { display: inline-block; margin-left: var(--sp-2); padding: 1px 8px; border-radius: 99px; background: rgba(var(--accent-rgb), 0.15); color: var(--accent); font-size: var(--text-xs); font-weight: 600; }
 .update-notes { font-size: var(--text-xs); color: var(--text-muted); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mirror-presets { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); flex-wrap: wrap; }
 .preset-tag { padding: 2px 10px; border: 1px solid var(--border); border-radius: 99px; background: transparent; color: var(--text-muted); font-size: var(--text-xs); cursor: pointer; transition: var(--transition-props); }
-.preset-tag:hover { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.06); }
+.preset-tag:hover { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.06); }
 
 /* --- Update progress modal --- */
 .update-overlay {
   position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+  background: var(--overlay);
   display: flex; align-items: center; justify-content: center;
   padding: var(--sp-4);
   animation: fade-in 0.2s ease;
@@ -603,18 +619,18 @@ onUnmounted(() => { stopProgressPolling() })
   width: 100%; max-width: 520px;
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: var(--sp-5);
-  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  box-shadow: var(--shadow-pop);
   animation: modal-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 @keyframes modal-pop { from { transform: translateY(12px) scale(0.97); opacity: 0; } to { transform: none; opacity: 1; } }
 .update-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-5); }
 .update-modal-head h3 { display: flex; align-items: center; gap: var(--sp-2); margin: 0; font-size: var(--text-lg); }
-.ver-pill { padding: 2px 10px; border-radius: 99px; background: rgba(139,92,246,0.15); color: var(--accent); font-size: var(--text-xs); font-weight: 600; }
+.ver-pill { padding: 2px 10px; border-radius: 99px; background: rgba(var(--accent-rgb), 0.15); color: var(--accent); font-size: var(--text-xs); font-weight: 600; }
 .done-icon { color: var(--success); }
 .err-icon { color: var(--danger); }
 .spinner {
   width: 16px; height: 16px; border-radius: 50%;
-  border: 2px solid rgba(139,92,246,0.25); border-top-color: var(--accent);
+  border: 2px solid rgba(var(--accent-rgb), 0.25); border-top-color: var(--accent);
   animation: spin 0.8s linear infinite; display: inline-block;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -628,10 +644,10 @@ onUnmounted(() => { stopProgressPolling() })
   border: 2px solid var(--border); background: var(--bg); color: var(--text-muted);
   transition: var(--transition-props);
 }
-.step.active .step-dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px rgba(139,92,246,0.15); }
-.step.done .step-dot { border-color: var(--success); background: var(--success); color: #fff; }
+.step.active .step-dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.15); }
+.step.done .step-dot { border-color: var(--success); background: var(--success); color: var(--text-on-accent); }
 .step.failed .step-dot { border-color: var(--danger); color: var(--danger); }
-.step-label { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+.step-label { font-size: var(--text-2xs); color: var(--text-muted); white-space: nowrap; }
 .step.active .step-label { color: var(--accent); font-weight: 600; }
 .step.done .step-label { color: var(--text-secondary); }
 .step-line { flex: 1; height: 2px; background: var(--border); margin: 0 4px; margin-bottom: 16px; transition: background var(--transition); }
@@ -641,7 +657,7 @@ onUnmounted(() => { stopProgressPolling() })
 .progress-track { width: 100%; height: 8px; background: var(--bg); border-radius: 99px; overflow: hidden; }
 .progress-fill {
   height: 100%; border-radius: 99px;
-  background: linear-gradient(90deg, var(--accent), #a78bfa);
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   transition: width 0.3s ease;
 }
 .progress-fill.indeterminate {
@@ -656,8 +672,8 @@ onUnmounted(() => { stopProgressPolling() })
 .progress-stage { font-size: var(--text-sm); color: var(--text-secondary); }
 .progress-num { font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.update-error-box { padding: var(--sp-3); border-radius: var(--radius); background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--danger); font-size: var(--text-sm); margin-bottom: var(--sp-3); word-break: break-word; }
-.update-error-box.warn { background: rgba(234,179,8,0.1); border-color: rgba(234,179,8,0.3); color: #eab308; }
+.update-error-box { padding: var(--sp-3); border-radius: var(--radius); background: rgba(var(--red-rgb), 0.1); border: 1px solid rgba(var(--red-rgb), 0.3); color: var(--danger); font-size: var(--text-sm); margin-bottom: var(--sp-3); word-break: break-word; }
+.update-error-box.warn { background: rgba(var(--yellow-rgb), 0.1); border-color: var(--warning-border); color: var(--warning); }
 .update-note { font-size: var(--text-xs); color: var(--text-muted); margin: 0 0 var(--sp-3); }
 .update-modal-actions { display: flex; gap: var(--sp-2); justify-content: flex-end; }
 .update-modal-actions:empty { display: none; }

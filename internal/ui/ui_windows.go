@@ -19,9 +19,12 @@ import (
 // IconResourceID is the icon ordinal embedded by go-winres (see winres/).
 const IconResourceID = 1
 
-// BackgroundRGB is the app background (#13111c), used for the window,
-// title bar and WebView2 default background so nothing flashes white.
-const BackgroundRGB = 0x13111c
+// Window/title-bar backgrounds per theme (match --bg-base in global.css:
+// Catppuccin Mocha base / Latte mantle), so nothing flashes before paint.
+const (
+	BackgroundDark  = 0x1e1e2e
+	BackgroundLight = 0xe6e9ef
+)
 
 // Options configures the window.
 type Options struct {
@@ -34,6 +37,8 @@ type Options struct {
 	Debug     bool
 	// StateFile persists window position/size/maximized between runs ("" = off).
 	StateFile string
+	// Dark selects the initial window/title-bar theme.
+	Dark bool
 	// HideOnClose, when it returns true, makes the close button hide the
 	// window (to the tray) instead of exiting. OnHide runs after hiding.
 	HideOnClose func() bool
@@ -218,19 +223,36 @@ func className(hwnd uintptr) string {
 	return windows.UTF16ToString(buf[:n])
 }
 
-// themeWindow applies the dark title bar and background brush.
-func themeWindow(hwnd uintptr) {
+// themeWindow applies the title bar theme and background brush.
+func themeWindow(hwnd uintptr, dark bool) {
+	bg := uint32(BackgroundLight)
+	if dark {
+		bg = BackgroundDark
+	}
 	if pDwmSetWindowAttr.Find() == nil {
-		on := int32(1)
+		on := int32(0)
+		if dark {
+			on = 1
+		}
 		if r, _, _ := pDwmSetWindowAttr.Call(hwnd, dwmwaUseImmersiveDarkMode, uintptr(unsafe.Pointer(&on)), 4); r != 0 {
 			_, _, _ = pDwmSetWindowAttr.Call(hwnd, dwmwaUseImmersiveDarkModeOld, uintptr(unsafe.Pointer(&on)), 4)
 		}
 		// Windows 11: tint the caption to the app background (ignored on Win10).
-		c := colorref(BackgroundRGB)
+		c := colorref(bg)
 		_, _, _ = pDwmSetWindowAttr.Call(hwnd, dwmwaCaptionColor, uintptr(unsafe.Pointer(&c)), 4)
 	}
-	if brush, _, _ := pCreateSolidBrush.Call(uintptr(colorref(BackgroundRGB))); brush != 0 {
+	if brush, _, _ := pCreateSolidBrush.Call(uintptr(colorref(bg))); brush != 0 {
 		_, _, _ = pSetClassLongPtrW.Call(hwnd, gclpHbrBackground, brush)
+	}
+}
+
+// SetDarkTheme switches the title bar of the open window (any goroutine).
+func SetDarkTheme(dark bool) {
+	mu.Lock()
+	hw := curHwnd
+	mu.Unlock()
+	if hw != 0 {
+		themeWindow(hw, dark)
 	}
 }
 
@@ -240,7 +262,11 @@ func themeWindow(hwnd uintptr) {
 func RunWindow(o Options) bool {
 	_ = os.MkdirAll(dataDir(), 0o755)
 	// WebView2 paints this before the first page renders (ARGB hex).
-	_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FF13111C")
+	if o.Dark {
+		_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FF1E1E2E")
+	} else {
+		_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", "FFE6E9EF")
+	}
 
 	dpi := systemDPI()
 	scale := func(v uint) int32 { return int32(v) * dpi / 96 }
@@ -267,7 +293,7 @@ func RunWindow(o Options) bool {
 			hwnd = wp
 			cs := (*(**cbtCreateWnd)(unsafe.Pointer(&lp))).Cs // lp is a CBT_CREATEWND*
 			cs.X, cs.Y, cs.Cx, cs.Cy = st.X, st.Y, st.W, st.H
-			themeWindow(wp)
+			themeWindow(wp, o.Dark)
 		}
 		r, _, _ := pCallNextHookEx.Call(0, code, wp, lp)
 		return r

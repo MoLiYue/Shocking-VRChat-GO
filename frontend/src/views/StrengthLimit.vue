@@ -194,7 +194,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.recommend-banner { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-4); margin-bottom: var(--sp-5); background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.25); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
+.recommend-banner { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-4); margin-bottom: var(--sp-5); background: rgba(var(--accent-rgb), 0.08); border: 1px solid rgba(var(--accent-rgb), 0.25); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
 .recommend-icon { color: var(--warning); flex-shrink: 0; margin-top: 2px; }
 .recommend-banner strong { color: var(--accent); }
 .limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-bottom: var(--sp-4); align-items: stretch; }
@@ -217,7 +217,7 @@ onMounted(load)
   transition: var(--transition-props);
   user-select: none;
 }
-.adj-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
+.adj-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
 .adj-btn:active { transform: scale(0.92); }
 .num-input { width: 64px; text-align: center; font-variant-numeric: tabular-nums; font-size: var(--text-base); font-weight: 600; }
 .bar-wrap { margin-top: var(--sp-2); height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden; }

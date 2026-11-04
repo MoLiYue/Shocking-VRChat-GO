@@ -1,6 +1,8 @@
 export default {
   // Nav
   nav: {
+    lightMode: '切换到浅色模式',
+    darkMode: '切换到深色模式',
     dashboard: 'Dashboard',
     params: '参数管理',
     sps: 'SPS2 / OGB',
@@ -118,6 +120,12 @@ export default {
   },
   // Settings page
   settings: {
+    appearanceTitle: '外观',
+    theme: '主题',
+    themeSystem: '跟随系统',
+    themeDark: '深色',
+    themeLight: '浅色',
+    themeHint: '立即生效，无需保存。',
     windowTitle: '桌面窗口',
     minimizeToTray: '关闭窗口时最小化到托盘',
     minimizeToTrayHint: '开启后点关闭按钮只隐藏窗口，程序继续在后台运行；单击托盘图标重新打开，右键托盘图标可退出。保存后立即生效。',

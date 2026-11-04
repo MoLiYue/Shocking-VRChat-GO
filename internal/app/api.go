@@ -207,6 +207,26 @@ func (a *App) Handler() http.Handler {
 		}
 		return map[string]any{"success": true}, nil
 	})
+	h("POST /api/v1/ui/theme", func(r *http.Request) (any, error) {
+		data, err := readBody(r)
+		if err != nil {
+			return nil, err
+		}
+		theme := "dark"
+		if config.Str(data["theme"], "") == "light" {
+			theme = "light"
+		}
+		if (theme == "dark") != a.UIThemeDark() {
+			a.Cfg.Write(func(adv, _ config.M) { config.Sub(adv, true, "general")["ui_theme"] = theme })
+			if err := a.Cfg.Save(); err != nil {
+				return nil, err
+			}
+		}
+		if a.OnTheme != nil {
+			a.OnTheme(theme == "dark")
+		}
+		return map[string]any{"success": true, "theme": theme}, nil
+	})
 	h("POST /api/v1/ui/locale", func(r *http.Request) (any, error) {
 		data, err := readBody(r)
 		if err != nil {

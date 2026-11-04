@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canvasFont, themeColor } from '@/canvasFont'
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -72,7 +73,7 @@ function draw() {
   ctx.clearRect(0, 0, W, H)
 
   // Background grid
-  ctx.strokeStyle = 'rgba(139,92,246,0.08)'
+  ctx.strokeStyle = themeColor('--canvas-grid')
   ctx.lineWidth = 1
   for (let i = 1; i < 4; i++) {
     const y = (i / 4) * H
@@ -80,10 +81,10 @@ function draw() {
   }
 
   if (!samples.value.length) {
-    ctx.fillStyle = 'rgba(139,92,246,0.06)'
+    ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.06)`
     ctx.fillRect(0, 0, W, H)
-    ctx.fillStyle = 'rgba(139,92,246,0.3)'
-    ctx.font = '12px "Segoe UI", "Microsoft YaHei UI", sans-serif'
+    ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.3)`
+    ctx.font = canvasFont(12)
     ctx.textAlign = 'center'
     ctx.fillText(loading.value ? '...' : t('common.noWaveData'), W / 2, H / 2 + 4)
     return
@@ -96,7 +97,7 @@ function draw() {
   if (triggerRange) {
     const bottomPx = triggerRange.bottom * W
     const topPx = triggerRange.top * W
-    ctx.fillStyle = 'rgba(139,92,246,0.04)'
+    ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.04)`
     ctx.fillRect(bottomPx, 0, topPx - bottomPx, H)
   }
 
@@ -104,7 +105,7 @@ function draw() {
   if (effectiveStrength.value > 0) {
     const envY = (1 - effectiveStrength.value) * H
     ctx.setLineDash([6, 4])
-    ctx.strokeStyle = 'rgba(251,191,36,0.5)'
+    ctx.strokeStyle = `rgba(${themeColor('--yellow-rgb')},0.5)`
     ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(0, envY); ctx.lineTo(W, envY); ctx.stroke()
     ctx.setLineDash([])
@@ -121,7 +122,7 @@ function draw() {
   }
   ctx.lineTo(W, H)
   ctx.closePath()
-  ctx.fillStyle = 'rgba(139,92,246,0.12)'
+  ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.12)`
   ctx.fill()
 
   // Draw waveform line
@@ -133,13 +134,13 @@ function draw() {
     if (px === 0) ctx.moveTo(px, (1 - val) * H)
     else ctx.lineTo(px, (1 - val) * H)
   }
-  ctx.strokeStyle = '#8b5cf6'
+  ctx.strokeStyle = themeColor('--canvas-line')
   ctx.lineWidth = 1.5
   ctx.stroke()
 
   // Labels
-  ctx.fillStyle = 'rgba(139,92,246,0.5)'
-  ctx.font = '10px "Segoe UI", "Microsoft YaHei UI", sans-serif'
+  ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.5)`
+  ctx.font = canvasFont(10)
   ctx.textAlign = 'left'
   ctx.fillText(`${(durationMs.value / 1000).toFixed(1)}s`, 4, H - 4)
   ctx.textAlign = 'right'
@@ -226,7 +227,7 @@ onUnmounted(() => {
   font-size: var(--text-xs);
   color: var(--text-muted);
   padding: var(--sp-1) var(--sp-2);
-  background: rgba(139, 92, 246, 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   white-space: nowrap;
@@ -252,7 +253,7 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--border);
-  background: rgba(10, 8, 16, 0.5);
+  background: var(--bg-inset);
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 

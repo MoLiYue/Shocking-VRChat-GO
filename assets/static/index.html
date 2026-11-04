@@ -5,10 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="dark">
   <title>Shocking VRChat</title>
-  <!-- Paint the app background before CSS/JS load to avoid a white flash -->
-  <style>html,body{background:#13111c;margin:0}</style>
-  <script type="module" crossorigin src="/assets/index-BD_OE4CK.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BNd6Z5ia.css">
+  <!-- Apply the theme and paint the background before CSS/JS load (no flash) -->
+  <script>
+    (function () {
+      var p = localStorage.getItem('theme') || 'dark'
+      var t = p === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : p
+      document.documentElement.dataset.theme = t
+    })()
+  </script>
+  <style>html,body{background:#1e1e2e;margin:0}html[data-theme=light],html[data-theme=light] body{background:#e6e9ef}</style>
+  <script type="module" crossorigin src="/assets/index-DMRBW67P.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Dx19UwDj.css">
 </head>
 <body>
   <div id="app"></div>

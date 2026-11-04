@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { themeColor } from '@/canvasFont'
 import { formatTime } from '@/time'
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api } from '@/api'
@@ -129,7 +130,11 @@ async function pollStatus() {
   } catch { connected.value = false }
 }
 
-const CH_RGB = { A: [167, 139, 250], B: [34, 211, 238] } as const
+// Bars use the channel colour; alpha encodes pulse frequency.
+function chRGB(ch: 'A' | 'B'): number[] {
+  const hex = themeColor(ch === 'A' ? '--ch-a-color' : '--ch-b-color', '#a78bfa').replace('#', '')
+  return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16))
+}
 
 function drawWaveCanvas(canvas: HTMLCanvasElement | null, buffer: {s: number; f: number}[], ch: 'A' | 'B') {
   if (!canvas) return
@@ -142,10 +147,10 @@ function drawWaveCanvas(canvas: HTMLCanvasElement | null, buffer: {s: number; f:
   const ctx = canvas.getContext('2d')!
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-  ctx.fillStyle = 'rgba(10, 8, 16, 0.95)'
+  ctx.fillStyle = themeColor('--canvas-bg')
   ctx.fillRect(0, 0, W, H)
 
-  ctx.strokeStyle = 'rgba(139,92,246,0.08)'
+  ctx.strokeStyle = themeColor('--canvas-grid')
   ctx.lineWidth = 1
   for (let pct = 25; pct <= 75; pct += 25) {
     const py = H - (pct / 100) * H
@@ -153,6 +158,7 @@ function drawWaveCanvas(canvas: HTMLCanvasElement | null, buffer: {s: number; f:
   }
 
   if (!buffer.length) return
+  const rgb = chRGB(ch)
 
   const slotW = W / DISPLAY_SLOTS
   const startIdx = Math.max(0, buffer.length - DISPLAY_SLOTS)
@@ -170,7 +176,7 @@ function drawWaveCanvas(canvas: HTMLCanvasElement | null, buffer: {s: number; f:
 
     // High frequency (short interval) = bright, low frequency = dimmer
     const freqT = Math.max(0, Math.min(1, 1 - (sample.f - 10) / 230))
-    const [r, g, b] = CH_RGB[ch]
+    const [r, g, b] = rgb
     ctx.fillStyle = `rgba(${r},${g},${b},${0.45 + 0.45 * freqT})`
     ctx.fillRect(x, H - barH, Math.max(barW, 0.5), barH)
   }
@@ -422,7 +428,7 @@ onUnmounted(stopLive)
 /* Channel output */
 .out-row + .out-row { margin-top: var(--sp-4); }
 .out-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
-.bar-track { flex: 1; height: 6px; background: rgba(139, 92, 246, 0.1); border-radius: var(--radius-full); overflow: hidden; }
+.bar-track { flex: 1; height: 6px; background: var(--track); border-radius: var(--radius-full); overflow: hidden; }
 .bar-fill { height: 100%; border-radius: var(--radius-full); background: var(--ch-color); transition: width 200ms linear; }
 .out-val { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
 .out-val strong { color: var(--text); }
@@ -446,7 +452,7 @@ onUnmounted(stopLive)
 .qr-tab { padding: var(--sp-1) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-xs); font-weight: 600; transition: var(--transition-props); }
 .qr-tab.active { border-color: var(--accent); color: var(--text); background: var(--bg-active); }
 .qr-tab:hover { border-color: var(--border-hover); color: var(--text); }
-.qr-badge { margin-left: auto; padding: 2px 8px; border-radius: var(--radius-full); font-size: 11px; font-weight: 600; }
+.qr-badge { margin-left: auto; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--text-2xs); font-weight: 600; }
 .qr-badge.v4 { background: var(--success-surface); color: var(--success); }
 .qr-badge.v3 { background: var(--info-surface); color: var(--info); }
 .qr-foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-1); }

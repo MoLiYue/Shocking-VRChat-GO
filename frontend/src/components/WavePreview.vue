@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canvasFont, themeColor } from '@/canvasFont'
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { api } from '@/api'
 import { useI18n } from '@/i18n'
@@ -65,10 +66,10 @@ function draw() {
 
   if (!samples.value.length) {
     // No preset selected - show a default square wave pattern
-    ctx.fillStyle = 'rgba(139,92,246,0.06)'
+    ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.06)`
     ctx.fillRect(0, 0, W, H)
-    ctx.fillStyle = 'rgba(139,92,246,0.3)'
-    ctx.font = '12px "Segoe UI", "Microsoft YaHei UI", sans-serif'
+    ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.3)`
+    ctx.font = canvasFont(12)
     ctx.textAlign = 'center'
     ctx.fillText(props.presetName ? t('common.loading') : t('common.noWaveData'), W / 2, H / 2 + 4)
     return
@@ -84,7 +85,7 @@ function draw() {
   }
 
   // Draw background grid
-  ctx.strokeStyle = 'rgba(139,92,246,0.08)'
+  ctx.strokeStyle = themeColor('--canvas-grid')
   ctx.lineWidth = 1
   for (let i = 1; i < 4; i++) {
     const y = (i / 4) * H
@@ -109,7 +110,7 @@ function draw() {
   }
   ctx.lineTo(W, H)
   ctx.closePath()
-  ctx.fillStyle = 'rgba(139,92,246,0.12)'
+  ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.12)`
   ctx.fill()
 
   // Draw waveform line
@@ -125,7 +126,7 @@ function draw() {
     if (px === 0) ctx.moveTo(px, (1 - val) * H)
     else ctx.lineTo(px, (1 - val) * H)
   }
-  ctx.strokeStyle = '#8b5cf6'
+  ctx.strokeStyle = themeColor('--canvas-line')
   ctx.lineWidth = 1.5
   ctx.stroke()
 
@@ -133,15 +134,15 @@ function draw() {
   if (floor > 0) {
     const floorY = (1 - floor * scale * env) * H
     ctx.setLineDash([4, 4])
-    ctx.strokeStyle = 'rgba(251,191,36,0.4)'
+    ctx.strokeStyle = `rgba(${themeColor('--yellow-rgb')},0.4)`
     ctx.lineWidth = 1
     ctx.beginPath(); ctx.moveTo(0, floorY); ctx.lineTo(W, floorY); ctx.stroke()
     ctx.setLineDash([])
   }
 
   // Labels
-  ctx.fillStyle = 'rgba(139,92,246,0.4)'
-  ctx.font = '10px "Segoe UI", "Microsoft YaHei UI", sans-serif'
+  ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.4)`
+  ctx.font = canvasFont(10)
   ctx.textAlign = 'left'
   const durationSec = (displaySamples * 0.025).toFixed(1)
   ctx.fillText(`${durationSec}s`, 4, H - 4)
@@ -182,7 +183,7 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--border);
-  background: rgba(10, 8, 16, 0.5);
+  background: var(--bg-inset);
 }
 .wave-preview-canvas {
   width: 100%;

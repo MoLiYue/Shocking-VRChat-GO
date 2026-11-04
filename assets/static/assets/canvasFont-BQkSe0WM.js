@@ -1,0 +1,1 @@
+function o(t,e=400){const n=getComputedStyle(document.documentElement).getPropertyValue("--font").trim()||"sans-serif";return`${e} ${t}px ${n}`}function r(t,e="#888"){return getComputedStyle(document.documentElement).getPropertyValue(t).trim()||e}export{o as c,r as t};

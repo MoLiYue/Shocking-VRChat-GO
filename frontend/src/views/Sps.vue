@@ -243,7 +243,7 @@ onUnmounted(stopZones)
   padding: var(--sp-5);
   text-align: center;
   color: var(--text-muted);
-  background: var(--bg-input, rgba(255, 255, 255, .03));
+  background: var(--bg-inset);
   border: 1px dashed var(--border);
   border-radius: var(--radius-md, 8px);
 }
@@ -255,7 +255,7 @@ onUnmounted(stopZones)
 
 .zone-table th {
   text-align: left;
-  font-size: .78rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-muted);
   padding: var(--sp-2) var(--sp-3);
@@ -265,20 +265,20 @@ onUnmounted(stopZones)
 .zone-table td {
   padding: var(--sp-3);
   border-bottom: 1px solid var(--border);
-  font-size: .85rem;
+  font-size: var(--text-sm);
 }
 
 .kind-tag {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 999px;
-  font-size: .72rem;
+  font-size: var(--text-2xs);
   font-weight: 600;
   border: 1px solid var(--border);
 }
 
-.kind-tag.orf { color: #ff8bc8; border-color: #ff8bc855; }
-.kind-tag.pen { color: #72c8e0; border-color: #72c8e055; }
+.kind-tag.orf { color: var(--accent-2); border-color: currentColor; }
+.kind-tag.pen { color: var(--ch-b-color); border-color: currentColor; }
 
 .zone-id { font-weight: 600; }
 
@@ -289,7 +289,6 @@ onUnmounted(stopZones)
 
 .add-cell { white-space: nowrap; display: flex; gap: var(--sp-2); }
 
-.btn-sm { padding: 2px 10px; font-size: .78rem; }
 
 .configured-grid {
   display: grid;
@@ -299,7 +298,7 @@ onUnmounted(stopZones)
 }
 
 .ch-head {
-  font-size: .9rem;
+  font-size: var(--text-base);
   margin: 0 0 var(--sp-2);
   color: var(--text-muted);
 }
@@ -318,12 +317,12 @@ onUnmounted(stopZones)
 .cfg-list li.off { opacity: .45; }
 
 .cfg-list code {
-  font-size: .8rem;
+  font-size: var(--text-xs);
   word-break: break-all;
 }
 
 .mode-tag {
-  font-size: .72rem;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   padding: 1px 7px;
   border: 1px solid var(--border);

@@ -21,6 +21,7 @@ type Options struct {
 	MinHeight   uint
 	Debug       bool
 	StateFile   string
+	Dark        bool
 	HideOnClose func() bool
 	OnHide      func()
 }
@@ -48,6 +49,9 @@ func TrayNotify(string, string) {}
 
 // ShowWindow is unsupported here.
 func ShowWindow() bool { return false }
+
+// SetDarkTheme is a no-op on this platform.
+func SetDarkTheme(bool) {}
 
 // AllowForeground is a no-op on this platform.
 func AllowForeground() {}

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import {
   LayoutDashboard, SlidersHorizontal, Plug, Gauge, ShieldAlert, Gamepad2, Zap, Ruler, Hand,
   Shuffle, FlaskConical, ScrollText, Disc, MessageSquare, Settings, Languages, Power,
-  PanelLeftClose, PanelLeftOpen, ChevronDown,
+  PanelLeftClose, PanelLeftOpen, ChevronDown, Sun, Moon,
 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import TourOverlay from '@/tour/TourOverlay.vue'
@@ -13,6 +13,7 @@ import TopProgress from '@/components/TopProgress.vue'
 import { appStatus, startStatusPolling } from '@/status'
 import { confirmDialog } from '@/dialog'
 import { useTour } from '@/tour/useTour'
+import { effectiveTheme, setTheme } from '@/theme'
 
 const { t, locale, setLocale } = useI18n()
 const { start } = useTour()
@@ -74,6 +75,10 @@ function toggleGroup(key: string) {
   if (s.has(key)) s.delete(key)
   else s.add(key)
   expandedGroups.value = s
+}
+
+function toggleTheme() {
+  setTheme(effectiveTheme.value === 'dark' ? 'light' : 'dark')
 }
 
 function toggleLocale() {
@@ -197,6 +202,15 @@ onMounted(() => {
           <Languages :size="16" />
           <span class="icon-btn-label">{{ locale === 'zh' ? 'EN' : '中' }}</span>
         </button>
+        <button
+          class="icon-btn"
+          :title="effectiveTheme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')"
+          :aria-label="effectiveTheme === 'dark' ? t('nav.lightMode') : t('nav.darkMode')"
+          @click="toggleTheme"
+        >
+          <Sun v-if="effectiveTheme === 'dark'" :size="16" />
+          <Moon v-else :size="16" />
+        </button>
         <button class="icon-btn icon-btn-danger" :title="t('nav.shutdown')" @click="shutdownApp">
           <Power :size="16" />
         </button>
@@ -262,8 +276,8 @@ onMounted(() => {
   width: 28px; height: 28px; flex-shrink: 0;
   display: grid; place-items: center;
   border-radius: var(--radius-sm);
-  background: var(--gradient-btn);
-  color: #fff;
+  background: var(--gradient-brand);
+  color: var(--text-on-accent);
 }
 .brand-name {
   font-size: var(--text-base);

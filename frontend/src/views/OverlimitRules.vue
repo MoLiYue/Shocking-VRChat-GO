@@ -170,7 +170,7 @@ onMounted(load)
 .status-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); padding: var(--sp-3) var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .status-label { font-size: var(--text-sm); color: var(--text-muted); }
 .status-chip { font-size: var(--text-sm); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.status-chip.active { background: rgba(139,92,246,0.15); color: var(--accent); border: 1px solid rgba(139,92,246,0.3); }
+.status-chip.active { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); border: 1px solid rgba(var(--accent-rgb), 0.3); }
 .rules-list { display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-4); }
 .rule-card { padding: var(--sp-4); transition: opacity 0.2s; }
 .rule-card.disabled { opacity: 0.5; }

@@ -149,7 +149,7 @@ onMounted(() => { loadPresets(); load() })
 <style scoped>
 .ch-tabs { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-4); }
 .ch-tabs button { padding: var(--sp-2) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); }
-.ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
+.ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
@@ -159,7 +159,7 @@ onMounted(() => { loadPresets(); load() })
 .visual { margin-top: var(--sp-3); }
 .bar { position: relative; height: 8px; background: var(--bg-inset); border-radius: 4px; }
 .fill { position: absolute; top: 0; height: 100%; background: var(--accent); border-radius: 4px; opacity: 0.4; }
-.mark { position: absolute; top: 14px; font-size: 10px; color: var(--text-muted); transform: translateX(-50%); }
+.mark { position: absolute; top: 14px; font-size: var(--text-2xs); color: var(--text-muted); transform: translateX(-50%); }
 .msg { font-size: var(--text-sm); color: var(--success); }
 @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
 </style>

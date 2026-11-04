@@ -1,6 +1,8 @@
 export default {
   // Nav
   nav: {
+    lightMode: 'Switch to light mode',
+    darkMode: 'Switch to dark mode',
     dashboard: 'Dashboard',
     params: 'Parameters',
     sps: 'SPS2 / OGB',
@@ -118,6 +120,12 @@ export default {
   },
   // Settings page
   settings: {
+    appearanceTitle: 'Appearance',
+    theme: 'Theme',
+    themeSystem: 'System',
+    themeDark: 'Dark',
+    themeLight: 'Light',
+    themeHint: 'Applies immediately; no need to save.',
     windowTitle: 'Desktop Window',
     minimizeToTray: 'Minimize to tray on close',
     minimizeToTrayHint: 'Closing the window only hides it and the program keeps running. Click the tray icon to reopen, right-click it to quit. Takes effect on save.',

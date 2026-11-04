@@ -143,7 +143,7 @@ onMounted(() => { loadPresets(); loadCombo() })
 <style scoped>
 .ch-tabs { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-4); }
 .ch-tabs button { padding: var(--sp-2) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); transition: var(--transition-props); }
-.ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
+.ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
@@ -151,8 +151,8 @@ onMounted(() => { loadPresets(); loadCombo() })
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .diagram { display: flex; align-items: stretch; height: 100px; gap: 2px; margin-bottom: var(--sp-4); }
 .phase { flex: 1; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); text-align: center; font-size: var(--text-sm); line-height: 1.4; }
-.phase-shock { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25); color: var(--danger); }
-.phase-touch { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.25); color: var(--success); flex: 2; }
+.phase-shock { background: rgba(var(--red-rgb), 0.08); border: 1px solid rgba(var(--red-rgb), 0.25); color: var(--danger); }
+.phase-touch { background: rgba(var(--green-rgb), 0.08); border: 1px solid rgba(var(--green-rgb), 0.25); color: var(--success); flex: 2; }
 .divider { display: flex; align-items: center; padding: 0 var(--sp-2); font-size: var(--text-xs); color: var(--warning); }
 .save-bar { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
 .msg { font-size: var(--text-sm); color: var(--success); }

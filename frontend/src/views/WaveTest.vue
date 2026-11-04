@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canvasFont, themeColor } from '@/canvasFont'
 import { Play, Square } from 'lucide-vue-next'
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
 import { api, apiPost } from '@/api'
@@ -61,11 +62,11 @@ function drawRealtimeCanvas(canvas: HTMLCanvasElement | null, buffer: WaveSample
   const h = rect.height
 
   // Clear
-  ctx.fillStyle = 'rgba(15, 15, 30, 0.95)'
+  ctx.fillStyle = themeColor('--canvas-bg')
   ctx.fillRect(0, 0, w, h)
 
   // Grid
-  ctx.strokeStyle = 'rgba(139,92,246,0.08)'
+  ctx.strokeStyle = themeColor('--canvas-grid')
   ctx.lineWidth = 1
   for (let pct = 25; pct <= 75; pct += 25) {
     const py = h - (pct / 100) * h
@@ -73,8 +74,8 @@ function drawRealtimeCanvas(canvas: HTMLCanvasElement | null, buffer: WaveSample
   }
 
   if (!buffer.length) {
-    ctx.fillStyle = 'rgba(255,255,255,0.2)'
-    ctx.font = '12px Inter, sans-serif'
+    ctx.fillStyle = themeColor('--canvas-text')
+    ctx.font = canvasFont(12)
     ctx.textAlign = 'center'
     ctx.fillText(t('waveTest.waitingData'), w / 2, h / 2)
     ctx.textAlign = 'start'
@@ -86,6 +87,8 @@ function drawRealtimeCanvas(canvas: HTMLCanvasElement | null, buffer: WaveSample
   const visibleCount = buffer.length - startIdx
   const xBase = (DISPLAY_SLOTS - visibleCount) * slotW
 
+  const rgbOf = (v: string) => themeColor(v, '128,128,128').split(',').map(Number)
+  const hi = rgbOf('--accent-rgb'), lo = rgbOf('--red-rgb')
   for (let i = 0; i < visibleCount; i++) {
     const sample = buffer[startIdx + i]
     if (sample.s <= 0) continue
@@ -95,20 +98,21 @@ function drawRealtimeCanvas(canvas: HTMLCanvasElement | null, buffer: WaveSample
     const barH = (sample.s / 100) * h
     const x = xBase + i * slotW + (slotW - barW) / 2
 
-    const freqT = 1 - (sample.f - 10) / 230
-    const r = Math.round(139 + (1 - freqT) * 100)
-    const g = Math.round(92 * freqT)
-    const b = Math.round(246 * freqT + 100 * (1 - freqT))
+    // High frequency (soft) = accent, low frequency (sharp) = red
+    const freqT = Math.max(0, Math.min(1, 1 - (sample.f - 10) / 230))
+    const r = Math.round(hi[0] * freqT + lo[0] * (1 - freqT))
+    const g = Math.round(hi[1] * freqT + lo[1] * (1 - freqT))
+    const b = Math.round(hi[2] * freqT + lo[2] * (1 - freqT))
     ctx.fillStyle = `rgba(${r},${g},${b},0.85)`
     ctx.fillRect(x, h - barH, Math.max(barW, 0.5), barH)
   }
 
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'
-  ctx.font = '9px Inter, sans-serif'
+  ctx.fillStyle = themeColor('--canvas-text')
+  ctx.font = canvasFont(10)
   ctx.fillText('100%', 2, 10)
   ctx.fillText('0%', 2, h - 2)
   const totalSeconds = (DISPLAY_SLOTS * SLOT_MS / 1000).toFixed(1)
-  ctx.fillStyle = 'rgba(255,255,255,0.25)'
+  ctx.fillStyle = themeColor('--canvas-text')
   ctx.fillText(`${totalSeconds}s`, w - 25, h - 2)
 }
 
@@ -161,7 +165,7 @@ function drawPreview() {
   const h = rect.height
 
   // Clear
-  ctx.fillStyle = 'rgba(15, 15, 30, 0.95)'
+  ctx.fillStyle = themeColor('--canvas-bg')
   ctx.fillRect(0, 0, w, h)
 
   const sections = previewSections.value
@@ -173,14 +177,9 @@ function drawPreview() {
 
   const barW = w / totalPulses
   let x = 0
-  const colors = [
-    'rgba(139,92,246,', // purple
-    'rgba(59,130,246,', // blue
-    'rgba(52,211,153,', // green
-    'rgba(251,191,36,', // amber
-    'rgba(248,113,113,', // red
-    'rgba(168,85,247,', // violet
-  ]
+  // One Catppuccin colour per section
+  const colors = ['--accent-rgb', '--teal-rgb', '--green-rgb', '--yellow-rgb', '--peach-rgb', '--pink-rgb']
+    .map((v) => `rgba(${themeColor(v)},`)
 
   for (let si = 0; si < sections.length; si++) {
     const sec = sections[si]
@@ -202,7 +201,7 @@ function drawPreview() {
 
     // Section divider
     if (si < sections.length - 1) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.2)'
+      ctx.strokeStyle = themeColor('--canvas-text')
       ctx.lineWidth = 1
       ctx.setLineDash([2, 2])
       ctx.beginPath()
@@ -214,8 +213,8 @@ function drawPreview() {
   }
 
   // Y labels
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'
-  ctx.font = '9px Inter, sans-serif'
+  ctx.fillStyle = themeColor('--canvas-text')
+  ctx.font = canvasFont(10)
   ctx.fillText('100%', 2, 10)
   ctx.fillText('0%', 2, h - 18)
 
@@ -227,14 +226,14 @@ function drawPreview() {
     const secTimeMs = sec.n_points * sec.repeats * (4 / previewSpeed.value) * 25
     const label = sec.repeats > 1 ? `${sec.n_points}×${sec.repeats} ${(secTimeMs/1000).toFixed(1)}s` : `${sec.n_points}pt ${(secTimeMs/1000).toFixed(1)}s`
     ctx.fillStyle = colors[si % colors.length] + '0.9)'
-    ctx.font = '9px Inter, sans-serif'
+    ctx.font = canvasFont(10)
     const tx = x + secW / 2 - ctx.measureText(label).width / 2
     ctx.fillText(label, Math.max(tx, x + 1), h - 4)
     x += secW
   }
 
   // Grid
-  ctx.strokeStyle = 'rgba(139,92,246,0.06)'
+  ctx.strokeStyle = themeColor('--canvas-grid')
   ctx.lineWidth = 1
   for (let pct = 25; pct <= 75; pct += 25) {
     const py = h - 16 - (pct / 100) * (h - 18)
@@ -482,7 +481,12 @@ onActivated(async () => {
   if (playing.value && !liveWs) startPolling()
 })
 
+// Static canvases redraw when the theme changes.
+function onTheme() { drawRealtime(); if (previewSections.value.length) drawPreview() }
+window.addEventListener('themechange', onTheme)
+
 onUnmounted(() => {
+  window.removeEventListener('themechange', onTheme)
   stopPolling()
   if (updateTimer) clearTimeout(updateTimer)
   if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
@@ -583,19 +587,19 @@ onUnmounted(() => {
 .wave-header { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
 .wave-title { font-size: var(--text-sm); color: var(--text-secondary); font-weight: 500; }
 .wave-status { font-size: var(--text-xs); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-muted); }
-.wave-status.active { background: rgba(139,92,246,0.15); color: var(--accent); }
+.wave-status.active { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); }
 .rt-canvas { width: 100%; height: 100px; display: block; }
 .wave-dual { display: flex; flex-direction: column; gap: var(--sp-2); }
 .wave-channel { display: flex; align-items: stretch; gap: var(--sp-2); }
 .wave-ch-label { display: flex; align-items: center; justify-content: center; width: 24px; font-size: var(--text-xs); font-weight: 600; color: var(--accent); opacity: 0.7; }
 .rt-legend { display: flex; gap: var(--sp-4); padding: var(--sp-2) var(--sp-4); font-size: var(--text-xs); color: var(--text-muted); border-top: 1px solid var(--border); }
 .rt-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 3px; vertical-align: middle; }
-.rt-legend .dot.purple { background: rgba(139,92,246,0.85); }
-.rt-legend .dot.red { background: rgba(239,92,100,0.85); }
+.rt-legend .dot.purple { background: rgba(var(--accent-rgb), 0.85); }
+.rt-legend .dot.red { background: rgba(var(--red-rgb), 0.85); }
 .test-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field:last-child { margin-bottom: 0; }
-.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--sp-2); font-weight: 500; }
+.field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
 .field select { width: 100%; }
 .val { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -605,18 +609,18 @@ onUnmounted(() => {
 .import-msg { font-size: var(--text-xs); margin-top: var(--sp-1); color: var(--text-secondary); }
 .channel-tabs { display: flex; gap: var(--sp-2); }
 .channel-tabs button { padding: var(--sp-2) var(--sp-5); border: 1px solid var(--border); border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); font-weight: 500; transition: var(--transition-props); }
-.channel-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
+.channel-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
 .channel-tabs button:disabled { opacity: 0.5; cursor: not-allowed; }
 .control-bar { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); }
 .msg { font-size: var(--text-sm); color: var(--warning); }
 .preview-container { display: flex; flex-direction: column; gap: var(--sp-2); }
-.preview-info { font-size: var(--text-xs); color: var(--text-secondary); padding: var(--sp-2) var(--sp-3); background: rgba(139,92,246,0.05); border-radius: var(--radius-sm); }
+.preview-info { font-size: var(--text-xs); color: var(--text-secondary); padding: var(--sp-2) var(--sp-3); background: rgba(var(--accent-rgb), 0.05); border-radius: var(--radius-sm); }
 .preview-canvas { width: 100%; height: 150px; border-radius: var(--radius-md); display: block; }
 .preview-legend { display: flex; gap: var(--sp-4); font-size: var(--text-xs); color: var(--text-muted); padding-top: var(--sp-1); }
 .legend-item { display: flex; align-items: center; gap: var(--sp-1); }
 .equiv-table { margin-bottom: var(--sp-4); }
 .equiv-row { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); font-size: var(--text-sm); }
-.equiv-row.highlight { background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.2); }
+.equiv-row.highlight { background: rgba(var(--accent-rgb), 0.08); border: 1px solid rgba(var(--accent-rgb), 0.2); }
 .equiv-label { color: var(--text-muted); }
 .equiv-formula { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .equiv-value { color: var(--accent); font-weight: 700; font-size: var(--text-base); font-variant-numeric: tabular-nums; }

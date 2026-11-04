@@ -138,6 +138,9 @@ func DefaultAdvanced() M {
 			"minimize_to_tray": false,
 			// Last UI language, for native strings (tray menu).
 			"ui_locale": "zh",
+			// Last effective UI theme ("dark"/"light"): window background
+			// and title bar colour before the page has loaded.
+			"ui_theme": "dark",
 		},
 		"chatbox": M{
 			"enabled":           false,

@@ -184,6 +184,7 @@ func main() {
 		}
 	}
 	a.OnShowWindow = show
+	a.OnTheme = ui.SetDarkTheme
 	if !*headless && ui.TrayAvailable() {
 		a.TrayAvailable = true
 		ui.StartTray(ui.TrayOptions{
@@ -206,6 +207,7 @@ func main() {
 			URL: url, Title: "Shocking VRChat",
 			Width: 1280, Height: 860, MinWidth: 960, MinHeight: 640,
 			Debug: *devtools, StateFile: filepath.Join(base, "window_state.json"),
+			Dark: a.UIThemeDark(),
 			HideOnClose: func() bool {
 				return a.TrayAvailable && config.Bool(a.Cfg.Get("general", "minimize_to_tray"), false)
 			},

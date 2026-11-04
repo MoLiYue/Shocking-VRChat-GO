@@ -611,3 +611,16 @@ func TestReleasePageFallback(t *testing.T) {
 		t.Fatal(r, err)
 	}
 }
+
+func TestUITheme(t *testing.T) {
+	e := newEnv(t)
+	var got []bool
+	e.a.OnTheme = func(d bool) { got = append(got, d) }
+	if !e.a.UIThemeDark() {
+		t.Fatal("default should be dark")
+	}
+	e.postJSON(t, "/api/v1/ui/theme", map[string]any{"theme": "light"})
+	if e.a.UIThemeDark() || len(got) != 1 || got[0] {
+		t.Fatal(got)
+	}
+}

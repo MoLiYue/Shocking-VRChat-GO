@@ -123,12 +123,12 @@ onUnmounted(stopWs)
 .log-area {
   flex: 1;
   overflow-y: auto;
-  background: rgba(10, 8, 16, 0.95);
+  background: var(--bg-inset);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--sp-3);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.6;
 }
 
@@ -139,11 +139,11 @@ onUnmounted(stopWs)
 }
 
 /* Level colors matching loguru */
-.log-debug { color: #8b8b8b; }
-.log-info { color: #d4d4d4; }
-.log-success { color: #4ade80; }
-.log-warning { color: #fbbf24; }
-.log-error { color: #f87171; }
-.log-critical { color: #ff4444; font-weight: bold; background: rgba(255,68,68,0.1); }
+.log-debug { color: var(--text-muted); }
+.log-info { color: var(--text-label); }
+.log-success { color: var(--success); }
+.log-warning { color: var(--warning); }
+.log-error { color: var(--danger); }
+.log-critical { color: var(--danger); font-weight: 700; background: var(--danger-surface); }
 
 </style>

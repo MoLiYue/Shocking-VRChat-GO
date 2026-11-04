@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import './assets/global.css'
+import './theme'
 
 const router = createRouter({
   history: createWebHistory(),

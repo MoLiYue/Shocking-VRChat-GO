@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { canvasFont, themeColor } from '@/canvasFont'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw, X } from 'lucide-vue-next'
 import { ref, onMounted, watch, nextTick, computed } from 'vue'
@@ -190,7 +191,7 @@ function draw() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
   ctx.clearRect(0, 0, W, H)
 
-  ctx.strokeStyle = 'rgba(139,92,246,0.06)'
+  ctx.strokeStyle = `rgba(${themeColor('--accent-rgb')},0.06)`
   ctx.lineWidth = 1
   for (let i = 0; i <= 10; i++) {
     const x = (i / 10) * W, y = (i / 10) * H
@@ -198,8 +199,8 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
   }
 
-  ctx.fillStyle = 'rgba(139,92,246,0.3)'
-  ctx.font = '11px Inter, sans-serif'
+  ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.3)`
+  ctx.font = canvasFont(11)
   ctx.fillText('0', 4, H - 4)
   ctx.fillText('1', W - 12, H - 4)
   ctx.fillText('1', 4, 14)
@@ -215,7 +216,7 @@ function draw() {
   }
   ctx.lineTo(W, H)
   ctx.closePath()
-  ctx.fillStyle = 'rgba(139,92,246,0.08)'
+  ctx.fillStyle = `rgba(${themeColor('--accent-rgb')},0.08)`
   ctx.fill()
 
   ctx.beginPath()
@@ -225,9 +226,9 @@ function draw() {
     if (px === 0) ctx.moveTo(px, (1 - y) * H)
     else ctx.lineTo(px, (1 - y) * H)
   }
-  ctx.strokeStyle = '#8b5cf6'
+  ctx.strokeStyle = themeColor('--canvas-line')
   ctx.lineWidth = 2.5
-  ctx.shadowColor = 'rgba(139,92,246,0.4)'
+  ctx.shadowColor = `rgba(${themeColor('--accent-rgb')},0.4)`
   ctx.shadowBlur = 8
   ctx.stroke()
   ctx.shadowBlur = 0
@@ -236,14 +237,14 @@ function draw() {
     const cx = p.x * W, cy = (1 - p.y) * H
     ctx.beginPath()
     ctx.arc(cx, cy, 7, 0, Math.PI * 2)
-    ctx.fillStyle = dragging === i ? '#fff' : '#a78bfa'
+    ctx.fillStyle = dragging === i ? themeColor('--text') : themeColor('--canvas-line')
     ctx.fill()
-    ctx.strokeStyle = '#13111c'
+    ctx.strokeStyle = themeColor('--bg-base')
     ctx.lineWidth = 2
     ctx.stroke()
     ctx.beginPath()
     ctx.arc(cx, cy, 7, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(139,92,246,0.4)'
+    ctx.strokeStyle = `rgba(${themeColor('--accent-rgb')},0.4)`
     ctx.lineWidth = 1
     ctx.stroke()
   })
@@ -487,7 +488,7 @@ onMounted(() => {
 <style scoped>
 .ch-tabs { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-4); }
 .ch-tabs button { padding: var(--sp-2) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-sm); }
-.ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(139,92,246,0.08); }
+.ch-tabs button.active { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), 0.08); }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
@@ -497,7 +498,7 @@ onMounted(() => {
 .visual { margin-top: var(--sp-3); }
 .bar { position: relative; height: 8px; background: var(--bg-inset); border-radius: 4px; }
 .fill { position: absolute; top: 0; height: 100%; background: var(--accent); border-radius: 4px; opacity: 0.4; }
-.mark { position: absolute; top: 14px; font-size: 10px; color: var(--text-muted); transform: translateX(-50%); }
+.mark { position: absolute; top: 14px; font-size: var(--text-2xs); color: var(--text-muted); transform: translateX(-50%); }
 .msg { font-size: var(--text-sm); color: var(--success); }
 
 .section-divider { margin: var(--sp-6) 0; border-top: 1px solid var(--border); }
@@ -513,7 +514,7 @@ onMounted(() => {
 .curve-canvas {
   width: 100%; height: 320px; cursor: crosshair;
   border-radius: var(--radius-lg);
-  background: rgba(10, 8, 16, 0.6);
+  background: var(--bg-inset);
   border: 1px solid var(--border);
 }
 
@@ -530,7 +531,7 @@ onMounted(() => {
   font-weight: 500;
   transition: var(--transition-props);
 }
-.preset-btn:hover { border-color: var(--accent); color: var(--text); background: rgba(139,92,246,0.06); }
+.preset-btn:hover { border-color: var(--accent); color: var(--text); background: rgba(var(--accent-rgb), 0.06); }
 
 .point-list { max-height: 140px; overflow-y: auto; }
 .pt-row { display: flex; align-items: center; gap: var(--sp-2); padding: 2px 0; font-variant-numeric: tabular-nums; font-size: var(--text-xs); }
