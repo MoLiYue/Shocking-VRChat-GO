@@ -77,6 +77,7 @@ const (
 	whCBT             = 5
 	whCallWndProc     = 4
 	hcbtCreateWnd     = 3
+	wmCreate          = 0x0001
 	wmClose           = 0x0010
 	gclpHbrBackground = ^uintptr(9) // -10
 	swShowMaximized   = 3
@@ -223,12 +224,17 @@ func className(hwnd uintptr) string {
 	return windows.UTF16ToString(buf[:n])
 }
 
-// themeWindow applies the title bar theme and background brush.
-func themeWindow(hwnd uintptr, dark bool) {
-	bg := uint32(BackgroundLight)
+func themeBG(dark bool) uint32 {
 	if dark {
-		bg = BackgroundDark
+		return BackgroundDark
 	}
+	return BackgroundLight
+}
+
+// themeCaption applies the DWM title bar theme. Only effective once the
+// window has been created (WM_CREATE or later); ignored during HCBT_CREATEWND.
+func themeCaption(hwnd uintptr, dark bool) {
+	bg := themeBG(dark)
 	if pDwmSetWindowAttr.Find() == nil {
 		on := int32(0)
 		if dark {
@@ -241,9 +247,19 @@ func themeWindow(hwnd uintptr, dark bool) {
 		c := colorref(bg)
 		_, _, _ = pDwmSetWindowAttr.Call(hwnd, dwmwaCaptionColor, uintptr(unsafe.Pointer(&c)), 4)
 	}
-	if brush, _, _ := pCreateSolidBrush.Call(uintptr(colorref(bg))); brush != 0 {
+}
+
+// themeBrush sets the window class background brush.
+func themeBrush(hwnd uintptr, dark bool) {
+	if brush, _, _ := pCreateSolidBrush.Call(uintptr(colorref(themeBG(dark)))); brush != 0 {
 		_, _, _ = pSetClassLongPtrW.Call(hwnd, gclpHbrBackground, brush)
 	}
+}
+
+// themeWindow applies the title bar theme and background brush.
+func themeWindow(hwnd uintptr, dark bool) {
+	themeCaption(hwnd, dark)
+	themeBrush(hwnd, dark)
 }
 
 // SetDarkTheme switches the title bar of the open window (any goroutine).
@@ -293,7 +309,7 @@ func RunWindow(o Options) bool {
 			hwnd = wp
 			cs := (*(**cbtCreateWnd)(unsafe.Pointer(&lp))).Cs // lp is a CBT_CREATEWND*
 			cs.X, cs.Y, cs.Cx, cs.Cy = st.X, st.Y, st.W, st.H
-			themeWindow(wp, o.Dark)
+			themeBrush(wp, o.Dark)
 		}
 		r, _, _ := pCallNextHookEx.Call(0, code, wp, lp)
 		return r
@@ -301,6 +317,11 @@ func RunWindow(o Options) bool {
 	cwp := windows.NewCallback(func(code, wp, lp uintptr) uintptr {
 		if int32(code) >= 0 {
 			m := *(**cwpStruct)(unsafe.Pointer(&lp)) // lp is a CWPSTRUCT*
+			if m.Message == wmCreate && m.Hwnd == hwnd && hwnd != 0 {
+				// DWM attributes set during HCBT_CREATEWND are dropped; apply
+				// them here, before the window is first shown.
+				themeCaption(hwnd, o.Dark)
+			}
 			if m.Message == wmClose && m.Hwnd == hwnd && hwnd != 0 {
 				lastState = placementOf(hwnd)
 			}
@@ -348,6 +369,7 @@ func RunWindow(o Options) bool {
 		_, _, _ = pShowWindow.Call(uintptr(wv.Window()), swShowMaximized)
 	}
 	hw := uintptr(wv.Window())
+	themeCaption(hw, o.Dark) // in case WM_CREATE was missed
 	mu.Lock()
 	curHwnd = hw
 	mu.Unlock()

@@ -13,6 +13,13 @@ function resolve(p: ThemePref): 'dark' | 'light' {
   return p === 'system' ? (mq.matches ? 'light' : 'dark') : p
 }
 
+function syncNative(t: 'dark' | 'light') {
+  // Native title bar (Windows) follows the theme.
+  fetch('/api/v1/ui/theme', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: t }),
+  }).catch(() => {})
+}
+
 function apply() {
   const t = resolve(themePref.value)
   const changed = t !== effectiveTheme.value || document.documentElement.dataset.theme !== t
@@ -22,10 +29,7 @@ function apply() {
   // Canvases read colours from CSS variables; resize makes them redraw.
   window.dispatchEvent(new Event('resize'))
   window.dispatchEvent(new CustomEvent('themechange', { detail: t }))
-  // Native title bar (Windows) follows the theme.
-  fetch('/api/v1/ui/theme', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: t }),
-  }).catch(() => {})
+  syncNative(t)
 }
 
 export function setTheme(p: ThemePref) {
@@ -37,3 +41,6 @@ export function setTheme(p: ThemePref) {
 mq.addEventListener('change', () => { if (themePref.value === 'system') apply() })
 effectiveTheme.value = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
 apply()
+// index.html already set data-theme, so apply() saw no change; still sync
+// the native title bar once (it may not match the saved config/initial paint).
+syncNative(effectiveTheme.value)
