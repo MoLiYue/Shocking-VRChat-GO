@@ -219,6 +219,11 @@ type Store struct {
 	basic  M
 	dir    string
 	mtimes map[string]time.Time
+	// fileMu serializes file I/O: concurrent Saves must not interleave
+	// (an older snapshot overwriting a newer one), and the hot-reload
+	// check must not read the advanced file written but the basic file
+	// not yet written by a Save in progress.
+	fileMu sync.Mutex
 }
 
 // ErrInited is returned by Init when default files were just created.
@@ -315,7 +320,19 @@ func WriteYAMLAtomic(path string, v any) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(b)
+	if err == nil {
+		err = f.Sync() // a crash/power loss must not leave an empty config
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -337,6 +354,8 @@ func ReadYAMLFile(path string) (any, error) {
 // Save persists both trees and records their mtimes so the hot-reload
 // watcher does not treat our own write as an external edit.
 func (s *Store) Save() error {
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
 	s.mu.RLock()
 	adv, basic := CopyMap(s.adv), CopyMap(s.basic)
 	s.mu.RUnlock()
@@ -348,6 +367,20 @@ func (s *Store) Save() error {
 	}
 	s.UpdateMtimes()
 	return nil
+}
+
+// LoadIfChanged reloads both files if either changed on disk since the
+// last Save/snapshot (an external edit). The mtimes are re-snapshotted
+// even on error so a broken file is reported once, not every poll.
+func (s *Store) LoadIfChanged() (adv, basic M, changed bool, err error) {
+	s.fileMu.Lock()
+	defer s.fileMu.Unlock()
+	if !s.Changed() {
+		return nil, nil, false, nil
+	}
+	adv, basic, err = s.LoadFiles()
+	s.UpdateMtimes()
+	return adv, basic, true, err
 }
 
 // UpdateMtimes snapshots current file mtimes.

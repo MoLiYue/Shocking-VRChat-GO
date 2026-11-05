@@ -29,12 +29,15 @@ async function loadInitial() {
 }
 
 let wanted = false
+let reconnectTimer = 0
 function connectWs() {
   if (ws || !wanted) return
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  ws = new WebSocket(`${proto}//${location.host}/ws/live`)
-  ws.onopen = () => { ws!.send(JSON.stringify({ subscribe: ['log'] })) }
-  ws.onmessage = (ev) => {
+  const sock = new WebSocket(`${proto}//${location.host}/ws/live`)
+  ws = sock
+  sock.onopen = () => { sock.send(JSON.stringify({ subscribe: ['log'] })) }
+  sock.onmessage = (ev) => {
+    if (ws !== sock) return // late message from a replaced socket
     try {
       const msg = JSON.parse(ev.data)
       if (msg.topic === 'log') {
@@ -46,8 +49,12 @@ function connectWs() {
       }
     } catch {}
   }
-  ws.onclose = () => { ws = null; if (wanted) setTimeout(connectWs, 2000) }
-  ws.onerror = () => { ws?.close() }
+  sock.onclose = () => {
+    if (ws !== sock) return // replaced: must not drop the new socket
+    ws = null
+    if (wanted) reconnectTimer = window.setTimeout(connectWs, 2000)
+  }
+  sock.onerror = () => { sock.close() }
 }
 
 function scrollToBottom() {
@@ -75,7 +82,11 @@ function levelClass(level: string): string {
   return 'log-' + level
 }
 
-function stopWs() { wanted = false; if (ws) { ws.close(); ws = null } }
+function stopWs() {
+  wanted = false
+  clearTimeout(reconnectTimer)
+  if (ws) { const sock = ws; ws = null; sock.close() }
+}
 onMounted(loadInitial)
 // Re-sync on return: entries logged while hidden were not streamed.
 onActivated(() => { if (!wanted) { wanted = true; if (logs.value.length) loadInitial(); connectWs() } })

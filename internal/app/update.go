@@ -2,6 +2,7 @@ package app
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -274,15 +275,36 @@ func (a *App) checkViaReleasePage() (map[string]any, error) {
 
 func (a *App) apiUpdateCheck(*http.Request) (any, error) { return a.checkUpdate(), nil }
 
+// Download limits: the whole download may take as long as it needs (slow
+// mirrors), but it is aborted when no data arrives for downloadIdle.
+var downloadIdle = 30 * time.Second // var for tests
+
+const downloadMaxSize = 512 << 20
+
 func (a *App) download(url, dest string, expected int) (int64, error) {
-	resp, err := httpGet(url, 120*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	idle := time.AfterFunc(downloadIdle, cancel)
+	defer idle.Stop()
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("User-Agent", "ShockingVRChat")
+	resp, err := http.DefaultClient.Do(req) // no overall timeout; idle timer above
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return 0, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, resp.Status)
+	}
 	total := resp.ContentLength
 	if total <= 0 {
 		total = int64(expected)
+	}
+	if total > downloadMaxSize {
+		return 0, fmt.Errorf("update package too large: %d bytes", total)
 	}
 	f, err := os.Create(dest)
 	if err != nil {
@@ -294,12 +316,15 @@ func (a *App) download(url, dest string, expected int) (int64, error) {
 	buf := make([]byte, 65536)
 	a.upd.setProgress("downloaded", 0, "total", total)
 	for {
+		idle.Reset(downloadIdle)
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
+			if done += int64(n); done > downloadMaxSize {
+				return done, fmt.Errorf("update package too large (> %d bytes)", downloadMaxSize)
+			}
 			if _, err := f.Write(buf[:n]); err != nil {
 				return done, err
 			}
-			done += int64(n)
 			pct := 0
 			if total > 0 {
 				pct = int(done * 100 / total)
@@ -317,8 +342,14 @@ func (a *App) download(url, dest string, expected int) (int64, error) {
 			break
 		}
 		if rerr != nil {
+			if ctx.Err() != nil {
+				return done, fmt.Errorf("download stalled: no data for %v", downloadIdle)
+			}
 			return done, rerr
 		}
+	}
+	if err := f.Sync(); err != nil {
+		return done, err
 	}
 	return done, nil
 }

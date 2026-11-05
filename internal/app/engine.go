@@ -165,7 +165,7 @@ func (e *Engine) start() {
 
 	loops := []func(context.Context){
 		a.commandQueueProcessor, a.strengthBoostChecker, a.waveTestLoop,
-		a.statusPusher, a.ogbHeartbeat,
+		a.statusPusher, a.ogbHeartbeat, a.overlimitLoop,
 	}
 	for _, f := range loops {
 		e.wg.Add(1)
@@ -556,21 +556,20 @@ func (a *App) waveTestLoop(ctx context.Context) {
 // HotReloadLoop polls config files every second.
 func (a *App) HotReloadLoop(ctx context.Context) {
 	for sleepCtx(ctx, time.Second) {
-		if a.Cfg.Changed() {
-			a.hotReload()
-		}
+		a.hotReload()
 	}
 }
 
 func (a *App) hotReload() {
-	adv, basic, err := a.Cfg.LoadFiles()
+	adv, basic, changed, err := a.Cfg.LoadIfChanged()
+	if !changed {
+		return
+	}
 	if err != nil {
 		logx.Error("[hot-reload] Failed to reload configuration: %v", err)
-		a.Cfg.UpdateMtimes()
 		return
 	}
 	a.applySettings(adv, basic)
-	a.Cfg.UpdateMtimes()
 }
 
 // applySettings swaps in new trees and restarts only what is needed.

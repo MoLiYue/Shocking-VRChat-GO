@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -45,7 +46,7 @@ func TestStoreInitSaveReload(t *testing.T) {
 	if Int(s.Get("dglab3", "channel_a", "strength_limit"), 0) != 5 {
 		t.Fatal("basic not synced into advanced")
 	}
-	if s.Changed() {
+	if _, _, changed, _ := s.LoadIfChanged(); changed {
 		t.Fatal("unexpected change")
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -77,5 +78,37 @@ func TestCoercion(t *testing.T) {
 	}
 	if !Equal(M{"a": 1}, M{"a": 1.0}) {
 		t.Fatal("Equal numeric")
+	}
+}
+
+// Concurrent Write+Save calls must leave the files equal to the final
+// in-memory state, and our own saves must not look like external edits.
+func TestConcurrentSave(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	if err := s.Init(); err != nil && err != ErrInited {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s.Write(func(adv, _ M) { Sub(adv, true, "general")["test_counter"] = i })
+			if err := s.Save(); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if _, _, changed, _ := s.LoadIfChanged(); changed {
+		t.Fatal("own saves reported as external change")
+	}
+	adv, _, err := s.LoadFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := Get(adv, "general", "test_counter"), s.Get("general", "test_counter"); !Equal(got, want) {
+		t.Fatalf("file has %v, memory has %v", got, want)
 	}
 }

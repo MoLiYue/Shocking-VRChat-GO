@@ -69,6 +69,7 @@ var (
 	pIsWindowVisible      = user32.NewProc("IsWindowVisible")
 	pAllowSetForeground   = user32.NewProc("AllowSetForegroundWindow")
 	pCreateSolidBrush     = gdi32.NewProc("CreateSolidBrush")
+	pDeleteObject         = gdi32.NewProc("DeleteObject")
 	pDwmSetWindowAttr     = dwmapi.NewProc("DwmSetWindowAttribute")
 	pGetCurrentThreadId   = kernel32.NewProc("GetCurrentThreadId")
 )
@@ -252,9 +253,22 @@ func themeCaption(hwnd uintptr, dark bool) {
 // themeBrush sets the window class background brush.
 func themeBrush(hwnd uintptr, dark bool) {
 	if brush, _, _ := pCreateSolidBrush.Call(uintptr(colorref(themeBG(dark)))); brush != 0 {
-		_, _, _ = pSetClassLongPtrW.Call(hwnd, gclpHbrBackground, brush)
+		// SetClassLongPtr returns the previous brush; free it unless it is
+		// a stock/system brush (we only ever replace our own after the first).
+		old, _, _ := pSetClassLongPtrW.Call(hwnd, gclpHbrBackground, brush)
+		brushMu.Lock()
+		if old != 0 && old == ownBrush {
+			_, _, _ = pDeleteObject.Call(old)
+		}
+		ownBrush = brush
+		brushMu.Unlock()
 	}
 }
+
+var (
+	brushMu  sync.Mutex
+	ownBrush uintptr // background brush we created (freed on replace)
+)
 
 // themeWindow applies the title bar theme and background brush.
 func themeWindow(hwnd uintptr, dark bool) {

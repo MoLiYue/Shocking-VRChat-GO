@@ -348,12 +348,14 @@ function startPolling() {
   // Connect WebSocket
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const wsUrl = `${proto}//${location.host}/ws/live`
-  liveWs = new WebSocket(wsUrl)
-  liveWs.onopen = () => {
+  const sock = new WebSocket(wsUrl)
+  liveWs = sock
+  sock.onopen = () => {
     // Subscribe to both channels
-    liveWs!.send(JSON.stringify({ subscribe: ['wave_A', 'wave_B'] }))
+    sock.send(JSON.stringify({ subscribe: ['wave_A', 'wave_B'] }))
   }
-  liveWs.onmessage = (ev) => {
+  sock.onmessage = (ev) => {
+    if (liveWs !== sock) return // late message from a replaced socket
     try {
       const msg = JSON.parse(ev.data)
       if (msg.topic === 'wave_A' && msg.samples) {
@@ -363,8 +365,8 @@ function startPolling() {
       }
     } catch {}
   }
-  liveWs.onclose = () => { liveWs = null }
-  liveWs.onerror = () => { liveWs?.close(); liveWs = null }
+  sock.onclose = () => { if (liveWs === sock) liveWs = null }
+  sock.onerror = () => { sock.close() }
 
   // Start animation loop
   animFrameId = requestAnimationFrame(animLoop)

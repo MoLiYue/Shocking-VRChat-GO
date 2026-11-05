@@ -3,7 +3,7 @@ import AppSelect from '@/components/AppSelect.vue'
 import { canvasFont, themeColor } from '@/canvasFont'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw, X } from 'lucide-vue-next'
-import { ref, onMounted, watch, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
 import { api, apiPost, apiDelete } from '@/api'
 import { useI18n } from '@/i18n'
 import WavePreview from '@/components/WavePreview.vue'
@@ -311,6 +311,7 @@ onMounted(() => {
   loadParams()
   window.addEventListener('resize', draw)
 })
+onUnmounted(() => window.removeEventListener('resize', draw))
 </script>
 
 <template>

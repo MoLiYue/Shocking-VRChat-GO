@@ -55,15 +55,18 @@ let lastFrame = 0
 // --- WebSocket-based real-time data ---
 // Pages are kept alive; live work only runs while this page is shown.
 let liveWanted = false
+let reconnectTimer = 0
 function connectLiveWs() {
   if (dashWs || !liveWanted) return
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const wsUrl = `${proto}//${location.host}/ws/live`
-  dashWs = new WebSocket(wsUrl)
-  dashWs.onopen = () => {
-    dashWs!.send(JSON.stringify({ subscribe: ['wave_A', 'wave_B', 'osc', 'status'] }))
+  const ws = new WebSocket(wsUrl)
+  dashWs = ws
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ subscribe: ['wave_A', 'wave_B', 'osc', 'status'] }))
   }
-  dashWs.onmessage = (ev) => {
+  ws.onmessage = (ev) => {
+    if (dashWs !== ws) return // a closed socket's late messages
     try {
       const msg = JSON.parse(ev.data)
       if (msg.topic === 'wave_A' && msg.samples) {
@@ -89,18 +92,23 @@ function connectLiveWs() {
       }
     } catch {}
   }
-  dashWs.onclose = () => {
+  ws.onclose = () => {
+    // Leaving and re-entering the page replaces the socket before the old
+    // one finishes closing; its onclose must not drop the new socket
+    // (which led to a duplicate connection and doubled wave samples).
+    if (dashWs !== ws) return
     dashWs = null
     if (!liveWanted) return
     // Reconnect after 2s
-    setTimeout(connectLiveWs, 2000)
+    reconnectTimer = window.setTimeout(connectLiveWs, 2000)
   }
-  dashWs.onerror = () => { dashWs?.close() }
+  ws.onerror = () => { ws.close() }
 }
 
 function disconnectLiveWs() {
   liveWanted = false
-  if (dashWs) { dashWs.close(); dashWs = null }
+  clearTimeout(reconnectTimer)
+  if (dashWs) { const ws = dashWs; dashWs = null; ws.close() }
 }
 
 // --- Polling (fallback for initial load and status heartbeat) ---
