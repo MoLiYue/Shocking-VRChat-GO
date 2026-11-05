@@ -447,7 +447,7 @@ func (h *Shock) OSC(addr string, args []any) {
 			SourceID: h.Channel + "_" + h.Mode + "_" + addr,
 		})
 		if !ok {
-			logx.Debug("[handler] Queue dropped (cooldown): %s %s %s", h.Channel, h.Mode, addr)
+			logx.Debug("[handler] Queue deferred (cooldown, latest kept): %s %s %s", h.Channel, h.Mode, addr)
 		}
 		return
 	}
@@ -729,11 +729,11 @@ func (h *Shock) handlerBoost(distance float64, c *Context) {
 	h.mu.Unlock()
 	switch mode {
 	case "1":
-		h.deps.Hub.BroadcastStrengthAdjust(h.Channel, "1", bv)
+		h.deps.Hub.BroadcastBoost(h.Channel, true, bv)
 		h.logTrigger(c, distance, nil, fmt.Sprintf("boost +%d", bv))
 	case "0":
-		h.deps.Hub.BroadcastStrengthAdjust(h.Channel, "0", bv)
-		h.logTrigger(c, distance, nil, fmt.Sprintf("boost -%d (reverted)", bv))
+		h.deps.Hub.BroadcastBoost(h.Channel, false, bv)
+		h.logTrigger(c, distance, nil, "boost reverted")
 	}
 }
 
@@ -956,9 +956,16 @@ func (h *Shock) Stop() {
 	h.mu.Lock()
 	boosted := h.boostActive
 	h.boostActive = false
+	wasOutputting := !h.isCleared
+	h.isCleared = true
 	h.mu.Unlock()
+	if wasOutputting {
+		// The feeder is gone; stop whatever the APP still has buffered.
+		h.deps.Hub.BroadcastClear(h.Channel)
+		logx.Debug("[handler] Channel %s cleared on stop", h.Channel)
+	}
 	if boosted {
-		h.deps.Hub.BroadcastStrengthAdjust(h.Channel, "0", h.boostValue(h.modeConfig()))
+		h.deps.Hub.BroadcastBoost(h.Channel, false, 0)
 		logx.Info("[handler] Channel %s boost reverted on shutdown", h.Channel)
 	}
 }

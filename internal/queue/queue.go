@@ -81,6 +81,10 @@ type Queue struct {
 	enabled   map[Priority]bool
 	dropped   int
 	notify    chan struct{}
+	// deferred holds the newest command per source that arrived during its
+	// cooldown; it is enqueued when the cooldown ends, so the final value
+	// of a burst (e.g. a parameter returning to 0) is never lost.
+	deferred map[string]*Command
 }
 
 // New creates a queue (maxSize<=0 -> DefaultMaxSize).
@@ -97,8 +101,9 @@ func New(maxSize int) *Queue {
 			OSCInteraction: 20 * time.Millisecond,
 			Game:           200 * time.Millisecond,
 		},
-		enabled: map[Priority]bool{API: true, OSCPanel: true, OSCInteraction: true, Game: true},
-		notify:  make(chan struct{}, 1),
+		enabled:  map[Priority]bool{API: true, OSCPanel: true, OSCInteraction: true, Game: true},
+		notify:   make(chan struct{}, 1),
+		deferred: map[string]*Command{},
 	}
 }
 
@@ -123,8 +128,10 @@ func (q *Queue) Dropped() int {
 	return q.dropped
 }
 
-// Put enqueues c unless its source is in cooldown, its priority is disabled,
-// or the queue is full. Returns true if accepted.
+// Put enqueues c unless its priority is disabled or the queue is full.
+// If its source is in cooldown, c replaces any earlier deferred command of
+// that source and is enqueued when the cooldown ends; Put then returns
+// false (not enqueued now). Returns true if enqueued immediately.
 func (q *Queue) Put(c *Command) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -133,9 +140,34 @@ func (q *Queue) Put(c *Command) bool {
 	}
 	now := time.Now()
 	key := c.Priority.String() + "_" + c.SourceID
-	if last, ok := q.lastTime[key]; ok && now.Sub(last) < q.cooldowns[c.Priority] {
-		return false
+	if last, ok := q.lastTime[key]; ok {
+		if wait := q.cooldowns[c.Priority] - now.Sub(last); wait > 0 {
+			if _, pending := q.deferred[key]; !pending {
+				time.AfterFunc(wait, func() { q.flushDeferred(key) })
+			}
+			q.deferred[key] = c
+			return false
+		}
 	}
+	return q.pushLocked(key, c, now)
+}
+
+func (q *Queue) flushDeferred(key string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	c := q.deferred[key]
+	if c == nil {
+		return // cleared meanwhile
+	}
+	delete(q.deferred, key)
+	if on, ok := q.enabled[c.Priority]; ok && !on {
+		return
+	}
+	q.pushLocked(key, c, time.Now())
+}
+
+// pushLocked must be called with q.mu held.
+func (q *Queue) pushLocked(key string, c *Command, now time.Time) bool {
 	q.lastTime[key] = now
 	if len(q.h) >= q.maxSize {
 		q.dropped++
@@ -189,5 +221,6 @@ func (q *Queue) Clear() int {
 	n := len(q.h)
 	q.h = nil
 	q.lastTime = map[string]time.Time{}
+	q.deferred = map[string]*Command{}
 	return n
 }

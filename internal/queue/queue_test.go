@@ -40,7 +40,7 @@ func TestCooldownAndDisable(t *testing.T) {
 	if !q.PutWave(OSCInteraction, "A", "x", "other") {
 		t.Fatal("different source should pass")
 	}
-	time.Sleep(25 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // deferred put flushed at ~20ms, cooldown over at ~40ms
 	if !q.PutWave(OSCInteraction, "A", "x", "s") {
 		t.Fatal("cooldown should have expired")
 	}
@@ -85,5 +85,38 @@ func TestGetUnblocksOnPutAndCancel(t *testing.T) {
 	cancel()
 	if _, err := q.Get(ctx); err == nil {
 		t.Fatal("expected ctx error")
+	}
+}
+
+// A burst within the cooldown must not lose its last value (e.g. a
+// parameter returning to 0): the newest command is delivered afterwards.
+func TestCooldownKeepsLatest(t *testing.T) {
+	q := New(0)
+	q.PutWave(OSCInteraction, "A", "v1", "src")
+	q.PutWave(OSCInteraction, "A", "v2", "src")
+	q.PutWave(OSCInteraction, "A", "v3", "src")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var got []string
+	for len(got) < 2 {
+		c, err := q.Get(ctx)
+		if err != nil {
+			t.Fatalf("got %v, want [v1 v3]", got)
+		}
+		got = append(got, c.Value)
+	}
+	if got[0] != "v1" || got[1] != "v3" {
+		t.Fatalf("got %v, want [v1 v3]", got)
+	}
+	if q.Len() != 0 {
+		t.Fatal("v2 should have been replaced")
+	}
+	// Clear drops deferred commands too.
+	q.PutWave(OSCInteraction, "A", "w1", "src2")
+	q.PutWave(OSCInteraction, "A", "w2", "src2")
+	q.Clear()
+	time.Sleep(40 * time.Millisecond)
+	if q.Len() != 0 {
+		t.Fatal("deferred command survived Clear")
 	}
 }

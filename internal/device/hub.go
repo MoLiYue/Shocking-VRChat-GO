@@ -3,6 +3,7 @@
 package device
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -46,6 +47,9 @@ type chanState struct {
 	strengthLimit   map[string]int
 	overlimitMax    map[string]int
 	overlimitActive map[string]bool
+	// boosted is the strength actually added by an active boost-mode
+	// handler (after capping), so reverting subtracts exactly that.
+	boosted map[string]int
 }
 
 func newChanState(l Limits, initialMax int) *chanState {
@@ -55,6 +59,7 @@ func newChanState(l Limits, initialMax int) *chanState {
 		strengthLimit:   map[string]int{"A": l.LimitA, "B": l.LimitB},
 		overlimitMax:    map[string]int{"A": l.OverlimitA, "B": l.OverlimitB},
 		overlimitActive: map[string]bool{"A": false, "B": false},
+		boosted:         map[string]int{"A": 0, "B": 0},
 	}
 }
 
@@ -201,7 +206,7 @@ func (h *Hub) BroadcastSetStrength(ch, mode string, value int, force bool) {
 }
 
 // BroadcastStrengthAdjust adds/subtracts strength, keeping additions inside
-// the configured cap (boost mode). mode: "0"=sub, "1"=add.
+// the configured cap. mode: "0"=sub, "1"=add.
 func (h *Hub) BroadcastStrengthAdjust(ch, mode string, value int) {
 	h.fanout("strength_adjust(mode="+mode+")", func(d Device) error {
 		s := d.state()
@@ -209,22 +214,47 @@ func (h *Hub) BroadcastStrengthAdjust(ch, mode string, value int) {
 		effective := value
 		switch mode {
 		case "1":
-			limit := s.upperLocked(ch)
-			headroom := limit - s.strength[ch]
-			if headroom < 0 {
-				headroom = 0
-			}
-			if effective > headroom {
-				effective = headroom
-			}
-			if effective != value {
-				logx.Warn("[ws] Device %s ch=%s boost +%d exceeds limit %d (current %d), capped to +%d",
-					d.ID(), ch, value, limit, s.strength[ch], effective)
-			}
+			effective = s.capAddLocked(d, ch, value)
 		case "0":
 			if effective > s.strength[ch] {
 				effective = s.strength[ch]
 			}
+		}
+		s.mu.Unlock()
+		if effective <= 0 {
+			return nil
+		}
+		return d.SetStrength(ch, mode, effective, true)
+	})
+}
+
+// capAddLocked limits an addition to the headroom below the effective cap.
+func (s *chanState) capAddLocked(d Device, ch string, value int) int {
+	limit := s.upperLocked(ch)
+	headroom := max(0, limit-s.strength[ch])
+	if value > headroom {
+		logx.Warn("[ws] Device %s ch=%s +%d exceeds limit %d (current %d), capped to +%d",
+			d.ID(), ch, value, limit, s.strength[ch], headroom)
+		return headroom
+	}
+	return value
+}
+
+// BroadcastBoost applies (on) or reverts (!on) a boost-mode increase.
+// The amount actually added per device is remembered, so reverting never
+// subtracts more than the boost added (e.g. when it was capped to 0).
+func (h *Hub) BroadcastBoost(ch string, on bool, value int) {
+	h.fanout(fmt.Sprintf("boost(on=%v)", on), func(d Device) error {
+		s := d.state()
+		s.mu.Lock()
+		var mode string
+		var effective int
+		if on {
+			mode, effective = "1", s.capAddLocked(d, ch, value)
+			s.boosted[ch] += effective
+		} else {
+			mode, effective = "0", min(s.boosted[ch], s.strength[ch])
+			s.boosted[ch] = 0
 		}
 		s.mu.Unlock()
 		if effective <= 0 {

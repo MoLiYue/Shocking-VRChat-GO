@@ -739,3 +739,37 @@ func TestDeviceEndpointsBypassBrowserGuard(t *testing.T) {
 		t.Fatalf("cross-site API request: got %d, want 403", resp.StatusCode)
 	}
 }
+
+// Reverting a boost subtracts only what the boost actually added: when it
+// was capped to +0 (strength already at the limit) nothing is subtracted,
+// instead of dropping the channel to 0.
+func TestBoostRevertSubtractsOnlyApplied(t *testing.T) {
+	e := newEnv(t) // limits are 50
+	app := dialMockApp(t, e)
+	master := config.Str(e.a.Cfg.Get("ws", "master_uuid"), "")
+	devID := app.waitFor(func(v map[string]string) bool { return v["type"] == "bind" }, 2*time.Second)["clientId"]
+	app.send(map[string]string{"type": "bind", "clientId": master, "targetId": devID, "message": "DGLAB"})
+	strengthMsgs := func(d time.Duration) []string {
+		var out []string
+		deadline := time.After(d)
+		for {
+			select {
+			case v := <-app.msgs:
+				if strings.HasPrefix(v["message"], "strength-1+") {
+					out = append(out, v["message"])
+				}
+			case <-deadline:
+				return out
+			}
+		}
+	}
+	time.Sleep(2200 * time.Millisecond) // let connection_init (strength 1) pass
+	app.send(map[string]string{"type": "msg", "clientId": master, "targetId": devID, "message": "strength-50+0+200+200"})
+	strengthMsgs(200 * time.Millisecond)
+
+	e.a.Hub.BroadcastBoost("A", true, 30)
+	e.a.Hub.BroadcastBoost("A", false, 30)
+	if got := strengthMsgs(300 * time.Millisecond); len(got) != 0 {
+		t.Fatalf("capped boost must not change strength, got %v", got)
+	}
+}
