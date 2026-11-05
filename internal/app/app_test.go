@@ -546,7 +546,8 @@ func TestStrengthAPIRespectsLimitAndGuard(t *testing.T) {
 	if _, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(e.web.URL, "http")+"/ws/live", h); err == nil {
 		t.Fatal("cross-origin /ws/live accepted")
 	}
-	// ...and the DG-LAB socket server rejects DNS-rebinding Host headers.
+	// ...and the DG-LAB socket server only accepts the secret master_uuid
+	// path, so a web page (or DNS rebinding) cannot connect to it.
 	r2, _ := http.NewRequest("GET", "http://127.0.0.1:"+strconv.Itoa(e.wsPort)+"/x", nil)
 	r2.Host = "evil.example"
 	resp, err = http.DefaultClient.Do(r2)
@@ -554,8 +555,11 @@ func TestStrengthAPIRespectsLimitAndGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != 403 {
-		t.Fatalf("rebinding on ws port got %d", resp.StatusCode)
+	if resp.StatusCode != 404 {
+		t.Fatalf("wrong path on ws port got %d", resp.StatusCode)
+	}
+	if _, _, err := websocket.DefaultDialer.Dial("ws://127.0.0.1:"+strconv.Itoa(e.wsPort)+"/"+master+"x", h); err == nil {
+		t.Fatal("ws port accepted a wrong uuid")
 	}
 }
 
@@ -701,4 +705,37 @@ func TestParamsSaveAllAppliesLive(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("new param not routed after live apply")
+}
+
+// The DG-LAB APP may send an Origin header or connect via a hostname; the
+// browser guard must not block the device endpoints (V3 port and V4 relay).
+func TestDeviceEndpointsBypassBrowserGuard(t *testing.T) {
+	e := newEnv(t)
+	hdr := http.Header{"Origin": {"http://localhost"}, "Sec-Fetch-Site": {"cross-site"}}
+	hdr.Set("Host", "my-pc.example")
+	uuid := config.Str(e.a.Cfg.Get("ws", "master_uuid"), "")
+	v3 := "ws://127.0.0.1:" + strconv.Itoa(e.wsPort) + "/" + uuid
+	v4 := "ws" + strings.TrimPrefix(e.web.URL, "http") + "/ws/dglab-v4?tid=" + e.a.V4.ControllerID
+	for name, u := range map[string]string{"v3": v3, "v4": v4} {
+		c, resp, err := websocket.DefaultDialer.Dial(u, hdr)
+		if err != nil {
+			code := 0
+			if resp != nil {
+				code = resp.StatusCode
+			}
+			t.Fatalf("%s: dial failed (HTTP %d): %v", name, code, err)
+		}
+		c.Close()
+	}
+	// The management API on the same web port stays protected.
+	req, _ := http.NewRequest("GET", e.web.URL+"/api/v1/status", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-site API request: got %d, want 403", resp.StatusCode)
+	}
 }

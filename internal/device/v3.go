@@ -256,6 +256,15 @@ func NewV3Server(hub *Hub, masterUUID func() string) *V3Server {
 }
 
 func (s *V3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Only the QR code path ws://ip:port/<master_uuid> is accepted. The
+	// random uuid is the access token (instead of browser Origin/Host
+	// checks, which the DG-LAB APP may not pass).
+	master := s.masterUUID()
+	if master == "" || strings.Trim(r.URL.Path, "/") != master {
+		logx.Warn("[ws] Rejected connection from %s: path %q does not match master uuid", r.RemoteAddr, r.URL.Path)
+		http.NotFound(w, r)
+		return
+	}
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -265,7 +274,7 @@ func (s *V3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hub:        s.hub,
 		conn:       c,
 		uuid:       config.NewUUID(),
-		masterUUID: s.masterUUID(),
+		masterUUID: master,
 		done:       make(chan struct{}),
 	}
 	s.mu.Lock()

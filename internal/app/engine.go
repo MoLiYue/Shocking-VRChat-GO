@@ -195,7 +195,9 @@ func (e *Engine) startWS() {
 	host := config.Str(a.Cfg.Get("ws", "listen_host"), "0.0.0.0")
 	port := config.Int(a.Cfg.Get("ws", "listen_port"), 28846)
 	s := device.NewV3Server(a.Hub, func() string { return config.Str(a.Cfg.Get("ws", "master_uuid"), "") })
-	s.Middleware = a.Guard.Wrap
+	// No browser guard here: this port only speaks the DG-LAB device
+	// protocol (bound by master_uuid), and the APP may send an Origin
+	// header that the cross-site check would reject.
 	if err := s.Start(host, port); err != nil {
 		logx.Error("[engine] WS server listen failed, possible port conflict: %v", err)
 		return

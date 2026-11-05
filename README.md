@@ -54,6 +54,8 @@ Web 管理接口（默认 `0.0.0.0:8800`）与 DG-LAB WS 服务（`0.0.0.0:28846
   依据浏览器的 `Sec-Fetch-Site` / `Origin` 判断。DG-LAB APP、脚本、curl 等非浏览器客户端不受影响。
 - **DNS 重绑定防护**：只接受 IP、`localhost` 和本机名作为 Host。如果通过自定义域名访问管理页面，
   需在 `settings-advanced-v0.2.yaml` 的 `web_server.allowed_hosts` 中添加该域名。
+- 以上两项只作用于管理页面和 API；设备端点（WS 端口 28846、`/ws/dglab-v4`）不做 Origin/Host 检查，
+  只校验二维码里的随机 `master_uuid` / `tid`，避免 DG-LAB APP 连接被拒。
 - **强度接口受上限约束**：`/api/v1/strength/.../set|add` 与 `strength_boost` 不再绕过强度上限。
 
 ## 构建

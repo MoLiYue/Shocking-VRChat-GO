@@ -332,7 +332,18 @@ func (a *App) Handler() http.Handler {
 		}
 		a.serveSPA(w, r)
 	})
-	return a.Guard.Wrap(mux)
+	guarded := a.Guard.Wrap(mux)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The DG-LAB APP endpoint is authenticated by the random tid and
+		// must not go through the browser guard: the APP may send an Origin
+		// header or connect through a hostname (SERVER_IP), which the guard
+		// would reject with 403.
+		if r.URL.Path == "/ws/dglab-v4" {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		guarded.ServeHTTP(w, r)
+	})
 }
 
 func (a *App) serveSPA(w http.ResponseWriter, r *http.Request) {
