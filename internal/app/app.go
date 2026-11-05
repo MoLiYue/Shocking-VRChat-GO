@@ -160,8 +160,6 @@ func (a *App) limitsFromSettings() device.Limits {
 	a.Cfg.Read(func(adv, _ config.M) {
 		l.LimitA = config.Int(config.Get(adv, "dglab3", "channel_a", "strength_limit"), 5)
 		l.LimitB = config.Int(config.Get(adv, "dglab3", "channel_b", "strength_limit"), 5)
-		l.OverlimitA = config.Int(config.Get(adv, "dglab3", "channel_a", "overlimit_max"), 20)
-		l.OverlimitB = config.Int(config.Get(adv, "dglab3", "channel_b", "overlimit_max"), 20)
 	})
 	return l
 }

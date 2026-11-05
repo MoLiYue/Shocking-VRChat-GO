@@ -15,7 +15,7 @@ type Status struct {
 	Strength        map[string]int  `json:"strength"`
 	StrengthMax     map[string]int  `json:"strength_max"`
 	StrengthLimit   map[string]int  `json:"strength_limit"`
-	OverlimitMax    map[string]int  `json:"overlimit_max"`
+	LimitBoost      map[string]int  `json:"limit_boost"`
 	OverlimitActive map[string]bool `json:"overlimit_active"`
 	UUID            string          `json:"uuid"`
 }
@@ -35,8 +35,7 @@ type Device interface {
 
 // Limits is the per-channel strength cap configuration.
 type Limits struct {
-	LimitA, LimitB         int
-	OverlimitA, OverlimitB int
+	LimitA, LimitB int
 }
 
 // chanState is the strength bookkeeping shared by V3 and V4.
@@ -45,7 +44,6 @@ type chanState struct {
 	strength        map[string]int
 	strengthMax     map[string]int
 	strengthLimit   map[string]int
-	overlimitMax    map[string]int
 	overlimitActive map[string]bool
 	// limitBoost is the temporary cap increase from overlimit rules
 	// (added on top of strengthLimit, decays back to 0 over time).
@@ -60,7 +58,6 @@ func newChanState(l Limits, initialMax int) *chanState {
 		strength:        map[string]int{"A": 0, "B": 0},
 		strengthMax:     map[string]int{"A": initialMax, "B": initialMax},
 		strengthLimit:   map[string]int{"A": l.LimitA, "B": l.LimitB},
-		overlimitMax:    map[string]int{"A": l.OverlimitA, "B": l.OverlimitB},
 		overlimitActive: map[string]bool{"A": false, "B": false},
 		limitBoost:      map[string]int{"A": 0, "B": 0},
 		boosted:         map[string]int{"A": 0, "B": 0},
@@ -95,7 +92,7 @@ func (s *chanState) snapshot(id string) Status {
 	defer s.mu.Unlock()
 	return Status{
 		Strength: cp(s.strength), StrengthMax: cp(s.strengthMax), StrengthLimit: cp(s.strengthLimit),
-		OverlimitMax: cp(s.overlimitMax), OverlimitActive: cp(s.overlimitActive), UUID: id,
+		LimitBoost: cp(s.limitBoost), OverlimitActive: cp(s.overlimitActive), UUID: id,
 	}
 }
 
@@ -114,7 +111,7 @@ type Hub struct {
 // NewHub creates an empty hub.
 func NewHub() *Hub {
 	h := &Hub{devices: map[Device]struct{}{}}
-	h.limits.Store(&Limits{LimitA: 5, LimitB: 5, OverlimitA: 20, OverlimitB: 20})
+	h.limits.Store(&Limits{LimitA: 5, LimitB: 5})
 	return h
 }
 
@@ -281,7 +278,6 @@ func (h *Hub) RefreshLimits(l Limits) {
 		s := d.state()
 		s.mu.Lock()
 		s.strengthLimit["A"], s.strengthLimit["B"] = l.LimitA, l.LimitB
-		s.overlimitMax["A"], s.overlimitMax["B"] = l.OverlimitA, l.OverlimitB
 		s.mu.Unlock()
 	}
 	go h.applyLimits(devs)

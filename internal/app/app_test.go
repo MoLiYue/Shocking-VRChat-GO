@@ -317,7 +317,7 @@ func TestSettingsAPIs(t *testing.T) {
 	e := newEnv(t)
 	// strength limit persist
 	r := e.postJSON(t, "/api/v1/strength_limit", map[string]any{"channel_a": 300, "overlimit_b": 33})
-	if config.Int(r["channel_a"], 0) != 200 || config.Int(r["overlimit_b"], 0) != 33 {
+	if config.Int(r["channel_a"], 0) != 200 || r["overlimit_b"] != nil {
 		t.Fatal(r)
 	}
 	b, _ := os.ReadFile(filepath.Join(e.a.BaseDir, config.FileBasic))

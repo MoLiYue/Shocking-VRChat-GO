@@ -468,8 +468,6 @@ func (a *App) strengthLimitView() map[string]any {
 	a.Cfg.Read(func(_, basic config.M) {
 		out["channel_a"] = config.Get(basic, "dglab3", "channel_a", "strength_limit")
 		out["channel_b"] = config.Get(basic, "dglab3", "channel_b", "strength_limit")
-		out["overlimit_a"] = config.Int(config.Get(basic, "dglab3", "channel_a", "overlimit_max"), 20)
-		out["overlimit_b"] = config.Int(config.Get(basic, "dglab3", "channel_b", "overlimit_max"), 20)
 	})
 	return out
 }
@@ -498,9 +496,6 @@ func (a *App) apiStrengthLimitSet(r *http.Request) (any, error) {
 			if raw, ok := data[key]; ok {
 				set("strength_limit", raw)
 			}
-			if raw, ok := data["overlimit_"+ch]; ok {
-				set("overlimit_max", raw)
-			}
 		}
 	})
 	if bad != nil {
@@ -512,7 +507,7 @@ func (a *App) apiStrengthLimitSet(r *http.Request) (any, error) {
 		}
 		a.refreshLimits()
 		v := a.strengthLimitView()
-		logx.Info("[strength] Updated: A=%v(+%v), B=%v(+%v)", v["channel_a"], v["overlimit_a"], v["channel_b"], v["overlimit_b"])
+		logx.Info("[strength] Updated: A=%v, B=%v", v["channel_a"], v["channel_b"])
 	}
 	v := a.strengthLimitView()
 	v["success"] = true

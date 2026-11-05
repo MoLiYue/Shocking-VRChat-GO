@@ -112,3 +112,13 @@ func TestConcurrentSave(t *testing.T) {
 		t.Fatalf("file has %v, memory has %v", got, want)
 	}
 }
+
+// overlimit_max was removed in 0.7.7; old files are cleaned on load.
+func TestOverlimitMaxDropped(t *testing.T) {
+	adv := M{"dglab3": M{"channel_a": M{"overlimit_max": 20}}}
+	basic := M{"dglab3": M{"channel_a": M{"overlimit_max": 20, "strength_limit": 5}}}
+	SyncBasicIntoAdvanced(adv, basic)
+	if Get(adv, "dglab3", "channel_a", "overlimit_max") != nil || Get(basic, "dglab3", "channel_a", "overlimit_max") != nil {
+		t.Fatal("overlimit_max not removed")
+	}
+}

@@ -45,7 +45,6 @@ func DefaultBasic() M {
 				},
 				"mode":           "distance",
 				"strength_limit": 5,
-				"overlimit_max":  20,
 			},
 			"channel_b": M{
 				"avatar_params": []any{
@@ -56,7 +55,6 @@ func DefaultBasic() M {
 				},
 				"mode":           "distance",
 				"strength_limit": 5,
-				"overlimit_max":  20,
 			},
 		},
 		"version": FileVersion,
@@ -192,9 +190,10 @@ func SyncBasicIntoAdvanced(adv, basic M) {
 		a["avatar_params"] = DeepCopy(b["avatar_params"])
 		a["mode"] = b["mode"]
 		a["strength_limit"] = b["strength_limit"]
-		if v, ok := b["overlimit_max"]; ok {
-			a["overlimit_max"] = v
-		}
+		// overlimit_max (removed in 0.7.7, superseded by overlimit rule
+		// boosts) is dropped from both trees so the next save cleans it up.
+		delete(a, "overlimit_max")
+		delete(b, "overlimit_max")
 		NormalizeAvatarParams(a)
 	}
 }
