@@ -64,7 +64,6 @@ export default {
     loading: '加载中...',
     noData: '暂无数据',
     unsaved: '未保存',
-    waveSimulator: '波形模拟预览',
     simulatedInput: '模拟输入值',
     effectiveStrength: '有效强度',
     noWaveData: '无波形数据',
@@ -216,8 +215,6 @@ export default {
     desc: '设置郊狼输出的最大强度。调节后自动保存并实时生效。',
     recommend: '推荐将强度设置为 {max}（设备允许的最大值），然后通过郊狼 APP 内的被控设置调节实际体验上限。初始默认值为 {default}，请根据自身承受能力逐步提高。',
     strengthLabel: '强度 (0–200)',
-    overlimitLabel: '超限额度 (0–200)',
-    overlimitHint: '超限规则触发时，最大值可提升到:',
     infoTitle: '工作原理',
     info1: '实际输出强度 = min(本页设置的上限, 郊狼APP被控设置的上限)',
     info2: '程序根据 OSC 参数在 0 ~ 上限 之间线性输出波形强度',
@@ -226,7 +223,6 @@ export default {
     overlimitTitle: '超限规则',
     overlimit1: '在超限规则页面中配置条件规则',
     overlimit2: '规则条件触发时，对应通道的上限临时提高规则设定的数值，并随时间回落到本页设置的上限',
-    overlimit3: '本页的"超限额度"作为默认回退值（当旧的单参数触发超限时使用）',
     overlimit4: '推荐使用超限规则页面进行更灵活的多层级配置',
   },
   // Param manager
@@ -266,6 +262,10 @@ export default {
   },
   // Mode: Shock
   modeShock: {
+    followValue: '强度跟随数值',
+    followHint: '开启后，电击强度随传入数值变化：数值越大越强。更强的输入立即生效，变弱时按持续时间平滑回落到当前数值。关闭则每次触发都是满强度。',
+    minStrength: '最低强度',
+    minStrengthHint: '刚超过触发下限时的强度，数值达到触发上限时为 100%（中间经过强度曲线映射）',
     title: '电击模式',
     desc: '触发后电击固定时长。被持续触碰时电到触碰离开后延续该时长。',
     params: '电击参数',
@@ -324,7 +324,6 @@ export default {
     preview: '波形预览',
     bottomHint: '导数值低于此值不触发。',
     topHint: '导数值达到此值视为最大强度。',
-    advancedWaveWindow: '高级：波形窗口',
   },
   // Mode: Combo
   combo: {

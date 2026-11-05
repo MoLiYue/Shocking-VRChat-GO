@@ -3,11 +3,11 @@ import AppSelect from '@/components/AppSelect.vue'
 import { canvasFont, themeColor } from '@/canvasFont'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw, X } from 'lucide-vue-next'
-import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { api, apiPost, apiDelete } from '@/api'
 import { useI18n } from '@/i18n'
 import WavePreview from '@/components/WavePreview.vue'
-import WaveSimulator from '@/components/WaveSimulator.vue'
+import AdvancedSection from '@/components/AdvancedSection.vue'
 
 const { t } = useI18n()
 
@@ -17,7 +17,6 @@ const freqMs = ref(10)
 const wavePreset = ref('')
 const waveScale = ref(1.0)
 const textureFloor = ref(0)
-const windowOps = ref(4)
 const sampleStep = ref(1.0)
 const advanceSamples = ref(4.0)
 const envelopeCurve = ref('smoothstep')
@@ -25,20 +24,7 @@ const triggerBottom = ref(0)
 const triggerTop = ref(0.8)
 const presets = ref<string[]>([])
 const distMsg = ref('')
-const showAdvanced = ref(false)
 
-// Reactive params for wave simulator
-const simParams = computed(() => ({
-  freq_ms: freqMs.value,
-  wave_preset: wavePreset.value || null,
-  wave_scale: waveScale.value,
-  texture_floor: textureFloor.value,
-  wave_window_ops: windowOps.value,
-  wave_sample_step: sampleStep.value,
-  wave_advance_samples: advanceSamples.value,
-  wave_envelope_curve: envelopeCurve.value,
-  trigger_range: { bottom: triggerBottom.value, top: triggerTop.value },
-}))
 
 // --- Curve editor state ---
 const paramList = ref<string[]>([])
@@ -63,7 +49,7 @@ async function loadPresets() {
   presets.value = data.presets || []
 }
 
-const unsaved = useUnsaved(() => ({ ch: ch.value, freqMs: freqMs.value, wavePreset: wavePreset.value, waveScale: waveScale.value, textureFloor: textureFloor.value, windowOps: windowOps.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+const unsaved = useUnsaved(() => ({ ch: ch.value, freqMs: freqMs.value, wavePreset: wavePreset.value, waveScale: waveScale.value, textureFloor: textureFloor.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
 
 async function loadDistance() {
   const data = await api(`/api/v1/mode_config/${ch.value}/distance`)
@@ -72,7 +58,6 @@ async function loadDistance() {
   wavePreset.value = cfg.wave_preset || ''
   waveScale.value = cfg.wave_scale ?? 1.0
   textureFloor.value = cfg.texture_floor ?? 0
-  windowOps.value = cfg.wave_window_ops ?? 4
   sampleStep.value = cfg.wave_sample_step ?? 1.0
   advanceSamples.value = cfg.wave_advance_samples ?? 4.0
   envelopeCurve.value = cfg.wave_envelope_curve || 'smoothstep'
@@ -87,7 +72,6 @@ async function saveDistance() {
     wave_preset: wavePreset.value || null,
     wave_scale: waveScale.value,
     texture_floor: textureFloor.value,
-    wave_window_ops: windowOps.value,
     wave_sample_step: sampleStep.value,
     wave_advance_samples: advanceSamples.value,
     wave_envelope_curve: envelopeCurve.value,
@@ -378,16 +362,7 @@ onUnmounted(() => window.removeEventListener('resize', draw))
           </div>
         </div>
 
-        <div style="margin-top:var(--sp-4)">
-          <button class="btn btn-ghost btn-sm" @click="showAdvanced = !showAdvanced">
-            {{ showAdvanced ? '▾' : '▸' }} {{ t('common.advanced') }}
-          </button>
-        </div>
-        <template v-if="showAdvanced">
-          <div class="field" style="margin-top:var(--sp-3)">
-            <label>{{ t('modeDistance.windowSize') }}: {{ windowOps }} ops</label>
-            <input type="range" v-model.number="windowOps" min="1" max="16" step="1">
-          </div>
+        <AdvancedSection>
           <div class="field">
             <label>{{ t('modeDistance.sampleStep') }}: {{ sampleStep.toFixed(2) }}</label>
             <input type="range" v-model.number="sampleStep" min="0.25" max="4" step="0.25">
@@ -400,7 +375,7 @@ onUnmounted(() => window.removeEventListener('resize', draw))
             <label>{{ t('modeDistance.envelope') }}</label>
             <AppSelect v-model="envelopeCurve" :options="[{ value: 'smoothstep', label: 'smoothstep' }, { value: 'linear', label: 'linear' }, { value: 'ease_in', label: 'ease_in' }, { value: 'ease_out', label: 'ease_out' }]" />
           </div>
-        </template>
+        </AdvancedSection>
       </section>
     </div>
 
@@ -411,15 +386,6 @@ onUnmounted(() => window.removeEventListener('resize', draw))
       <span class="msg">{{ distMsg }}</span>
     </div>
 
-    <!-- Wave Simulator -->
-    <section class="card" style="margin-top:var(--sp-5)">
-      <h2>{{ t('common.waveSimulator') }}</h2>
-      <WaveSimulator
-        mode="distance"
-        :channel="ch"
-        :params="simParams"
-      />
-    </section>
 
     <!-- Curve Editor Section -->
     <div class="section-divider"></div>

@@ -64,7 +64,6 @@ export default {
     loading: 'Loading...',
     noData: 'No data',
     unsaved: 'Unsaved',
-    waveSimulator: 'Wave Simulator',
     simulatedInput: 'Simulated Input',
     effectiveStrength: 'Effective Strength',
     noWaveData: 'No wave data',
@@ -216,8 +215,6 @@ export default {
     desc: 'Set max output strength. Changes auto-save and take effect immediately.',
     recommend: 'Recommended: set to {max} (device maximum), then adjust the actual limit in the DG-LAB APP\'s remote settings. Default is {default}, increase gradually.',
     strengthLabel: 'Strength (0–200)',
-    overlimitLabel: 'Overlimit Cap (0–200)',
-    overlimitHint: 'When overlimit rule triggers, max can increase to:',
     infoTitle: 'How It Works',
     info1: 'Actual output = min(this setting, DG-LAB APP remote limit)',
     info2: 'Program outputs wave strength linearly between 0 and the limit',
@@ -226,7 +223,6 @@ export default {
     overlimitTitle: 'Overlimit Rules',
     overlimit1: 'Configure conditional rules in the Overlimit Rules page',
     overlimit2: 'When a rule triggers, the channel limit is temporarily raised by the rule\'s amount and falls back to the limit set here over time',
-    overlimit3: 'This page\'s "Overlimit Cap" is the default fallback value',
     overlimit4: 'Use the Overlimit Rules page for flexible multi-level config',
   },
   // Param manager
@@ -266,6 +262,10 @@ export default {
   },
   // Mode: Shock
   modeShock: {
+    followValue: 'Strength follows value',
+    followHint: 'When on, shock strength follows the incoming value: higher means stronger. Stronger input takes effect immediately; weaker input lets it fall smoothly over the duration. When off every trigger is full strength.',
+    minStrength: 'Minimum strength',
+    minStrengthHint: 'Strength just above the trigger bottom; 100% at the trigger top (mapped through the strength curve)',
     title: 'Shock Mode',
     desc: 'Triggers a fixed-duration shock. Continues until contact leaves plus the set duration.',
     params: 'Shock Parameters',
@@ -324,7 +324,6 @@ export default {
     preview: 'Wave Preview',
     bottomHint: 'No trigger when derivative below this.',
     topHint: 'Max strength when derivative reaches this.',
-    advancedWaveWindow: 'Advanced: Wave Window',
   },
   // Mode: Combo
   combo: {

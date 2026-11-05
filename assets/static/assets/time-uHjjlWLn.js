@@ -1,0 +1,1 @@
+import{v as i}from"./index-Dpl91UmO.js";function n(e){const{locale:t}=i();return new Date(e*1e3).toLocaleTimeString(t.value==="zh"?"zh-CN":"en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:!1})}export{n as f};

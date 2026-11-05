@@ -2,11 +2,10 @@
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw } from 'lucide-vue-next'
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 import WavePreview from '@/components/WavePreview.vue'
-import WaveSimulator from '@/components/WaveSimulator.vue'
 
 const { t } = useI18n()
 
@@ -14,25 +13,20 @@ const ch = ref<'a' | 'b'>('a')
 const duration = ref(2)
 const wavePreset = ref('')
 const waveScale = ref(1.0)
+const followValue = ref(false)
+const minStrength = ref(0.2)
 const triggerBottom = ref(0)
 const triggerTop = ref(0.8)
 const presets = ref<string[]>([])
 const msg = ref('')
 
-// Reactive params for wave simulator
-const simParams = computed(() => ({
-  duration: duration.value,
-  wave_preset: wavePreset.value || null,
-  wave_scale: waveScale.value,
-  trigger_range: { bottom: triggerBottom.value, top: triggerTop.value },
-}))
 
 async function loadPresets() {
   const data = await api('/api/v1/wave_presets')
   presets.value = data.presets || []
 }
 
-const unsaved = useUnsaved(() => ({ ch: ch.value, duration: duration.value, wavePreset: wavePreset.value, waveScale: waveScale.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+const unsaved = useUnsaved(() => ({ ch: ch.value, duration: duration.value, wavePreset: wavePreset.value, waveScale: waveScale.value, followValue: followValue.value, minStrength: minStrength.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
 
 async function load() {
   const data = await api(`/api/v1/mode_config/${ch.value}/shock`)
@@ -40,6 +34,8 @@ async function load() {
   duration.value = cfg.duration ?? 2
   wavePreset.value = cfg.wave_preset || ''
   waveScale.value = cfg.wave_scale ?? 1.0
+  followValue.value = !!cfg.follow_value
+  minStrength.value = cfg.min_strength ?? 0.2
   triggerBottom.value = data.trigger_range?.bottom ?? 0
   triggerTop.value = data.trigger_range?.top ?? 0.8
   unsaved.markClean()
@@ -50,6 +46,8 @@ async function save() {
     duration: duration.value,
     wave_preset: wavePreset.value || null,
     wave_scale: waveScale.value,
+    follow_value: followValue.value,
+    min_strength: minStrength.value,
     trigger_range: { bottom: triggerBottom.value, top: triggerTop.value },
   })
   msg.value = data.success ? t('common.saved') : t('common.saveFailed')
@@ -81,6 +79,18 @@ onMounted(() => { loadPresets(); load() })
           <label>{{ t('modeShock.duration') }}: {{ duration.toFixed(1) }}{{ t('modeShock.durationUnit') }}</label>
           <input type="range" v-model.number="duration" min="0.5" max="10" step="0.1">
           <p class="hint">{{ t('modeShock.durationHint') }}</p>
+        </div>
+        <div class="field">
+          <label class="toggle-row">
+            <input type="checkbox" class="switch" role="switch" v-model="followValue">
+            <span>{{ t('modeShock.followValue') }}</span>
+          </label>
+          <p class="hint">{{ t('modeShock.followHint') }}</p>
+        </div>
+        <div class="field" v-if="followValue">
+          <label>{{ t('modeShock.minStrength') }}: {{ (minStrength * 100).toFixed(0) }}%</label>
+          <input type="range" v-model.number="minStrength" min="0" max="1" step="0.05">
+          <p class="hint">{{ t('modeShock.minStrengthHint') }}</p>
         </div>
         <div class="field">
           <label>{{ t('common.wavePreset') }}</label>
@@ -125,15 +135,6 @@ onMounted(() => { loadPresets(); load() })
       </section>
     </div>
 
-    <!-- Wave Simulator -->
-    <section class="card" style="margin-top:var(--sp-5)">
-      <h2>{{ t('common.waveSimulator') }}</h2>
-      <WaveSimulator
-        mode="shock"
-        :channel="ch"
-        :params="simParams"
-      />
-    </section>
 
     <div class="save-bar sticky">
       <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
@@ -153,6 +154,7 @@ onMounted(() => { loadPresets(); load() })
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
 .field .app-select, .field input[type="number"] { width: 100%; }
 .field input[type="range"] { width: 100%; accent-color: var(--accent); }
+.toggle-row { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); color: var(--text-label); font-weight: 500; cursor: pointer; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
 .visual { margin-top: var(--sp-3); }
 .bar { position: relative; height: 8px; background: var(--bg-inset); border-radius: 4px; }

@@ -9,8 +9,6 @@ const { t } = useI18n()
 
 const limitA = ref(5)
 const limitB = ref(5)
-const overlimitA = ref(20)
-const overlimitB = ref(20)
 const msg = ref('')
 const msgType = ref<'ok' | 'err'>('ok')
 
@@ -19,19 +17,17 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null
 // Raising a limit by more than this in one go needs explicit confirmation.
 const SAFE_STEP = 20
 // Last values the backend accepted; a cancelled confirmation reverts to these.
-const saved = { limitA: 5, limitB: 5, overlimitA: 20, overlimitB: 20 }
+const saved = { limitA: 5, limitB: 5 }
 
 async function load() {
   const data = await api('/api/v1/strength_limit')
   limitA.value = data.channel_a ?? 5
   limitB.value = data.channel_b ?? 5
-  overlimitA.value = data.overlimit_a ?? 20
-  overlimitB.value = data.overlimit_b ?? 20
-  Object.assign(saved, { limitA: limitA.value, limitB: limitB.value, overlimitA: overlimitA.value, overlimitB: overlimitB.value })
+  Object.assign(saved, { limitA: limitA.value, limitB: limitB.value })
 }
 
 function current() {
-  return { limitA: limitA.value, limitB: limitB.value, overlimitA: overlimitA.value, overlimitB: overlimitB.value }
+  return { limitA: limitA.value, limitB: limitB.value }
 }
 
 let confirming = false
@@ -44,7 +40,6 @@ async function save() {
     confirming = true
     const names: Record<string, string> = {
       limitA: 'A ' + t('strength.strengthLabel'), limitB: 'B ' + t('strength.strengthLabel'),
-      overlimitA: 'A ' + t('strength.overlimitLabel'), overlimitB: 'B ' + t('strength.overlimitLabel'),
     }
     const detail = jumps.map((k) => `${names[k]}: ${saved[k]} → ${cur[k]}`).join('\n')
     const ok = await confirmDialog({
@@ -56,15 +51,12 @@ async function save() {
     confirming = false
     if (!ok) {
       limitA.value = saved.limitA; limitB.value = saved.limitB
-      overlimitA.value = saved.overlimitA; overlimitB.value = saved.overlimitB
       return
     }
   }
   const data = await apiPost('/api/v1/strength_limit', {
     channel_a: limitA.value,
     channel_b: limitB.value,
-    overlimit_a: overlimitA.value,
-    overlimit_b: overlimitB.value,
   })
   if (data.success) {
     Object.assign(saved, current())
@@ -88,16 +80,12 @@ function clamp(val: number) { return Math.max(0, Math.min(200, val)) }
 function onInput() {
   limitA.value = clamp(limitA.value)
   limitB.value = clamp(limitB.value)
-  overlimitA.value = clamp(overlimitA.value)
-  overlimitB.value = clamp(overlimitB.value)
   schedSave()
 }
 
-function adj(target: 'limitA' | 'limitB' | 'overlimitA' | 'overlimitB', delta: number) {
+function adj(target: 'limitA' | 'limitB', delta: number) {
   if (target === 'limitA') limitA.value = clamp(limitA.value + delta)
   else if (target === 'limitB') limitB.value = clamp(limitB.value + delta)
-  else if (target === 'overlimitA') overlimitA.value = clamp(overlimitA.value + delta)
-  else if (target === 'overlimitB') overlimitB.value = clamp(overlimitB.value + delta)
   schedSave()
 }
 
@@ -128,18 +116,6 @@ onMounted(load)
             <button class="adj-btn" aria-label="+1" @click="adj('limitA', 1)"><Plus :size="14" /></button>
           </div>
         </div>
-        <div class="field" style="margin-top:var(--sp-4)">
-          <label>{{ t('strength.overlimitLabel') }}</label>
-          <div class="slider-row">
-            <input type="range" v-model.number="overlimitA" min="0" max="200" step="1" @input="onInput">
-          </div>
-          <div class="value-row">
-            <button class="adj-btn" aria-label="-1" @click="adj('overlimitA', -1)"><Minus :size="14" /></button>
-            <input type="number" v-model.number="overlimitA" min="0" max="200" class="num-input" @input="onInput">
-            <button class="adj-btn" aria-label="+1" @click="adj('overlimitA', 1)"><Plus :size="14" /></button>
-          </div>
-          <p class="hint">{{ t('strength.overlimitHint') }} <strong>{{ overlimitA }}</strong></p>
-        </div>
       </section>
 
       <section class="card ch-b">
@@ -154,18 +130,6 @@ onMounted(load)
             <input type="number" v-model.number="limitB" min="0" max="200" class="num-input" @input="onInput">
             <button class="adj-btn" aria-label="+1" @click="adj('limitB', 1)"><Plus :size="14" /></button>
           </div>
-        </div>
-        <div class="field" style="margin-top:var(--sp-4)">
-          <label>{{ t('strength.overlimitLabel') }}</label>
-          <div class="slider-row">
-            <input type="range" v-model.number="overlimitB" min="0" max="200" step="1" @input="onInput">
-          </div>
-          <div class="value-row">
-            <button class="adj-btn" aria-label="-1" @click="adj('overlimitB', -1)"><Minus :size="14" /></button>
-            <input type="number" v-model.number="overlimitB" min="0" max="200" class="num-input" @input="onInput">
-            <button class="adj-btn" aria-label="+1" @click="adj('overlimitB', 1)"><Plus :size="14" /></button>
-          </div>
-          <p class="hint">{{ t('strength.overlimitHint') }} <strong>{{ overlimitB }}</strong></p>
         </div>
       </section>
     </div>
@@ -186,7 +150,6 @@ onMounted(load)
       <ul>
         <li><router-link to="/overlimit-rules">{{ t('strength.overlimit1') }}</router-link></li>
         <li>{{ t('strength.overlimit2') }}</li>
-        <li>{{ t('strength.overlimit3') }}</li>
         <li>{{ t('strength.overlimit4') }}</li>
       </ul>
     </div>

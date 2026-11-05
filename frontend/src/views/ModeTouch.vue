@@ -2,11 +2,11 @@
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { RotateCcw } from 'lucide-vue-next'
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 import WavePreview from '@/components/WavePreview.vue'
-import WaveSimulator from '@/components/WaveSimulator.vue'
+import AdvancedSection from '@/components/AdvancedSection.vue'
 
 const { t } = useI18n()
 const ch = ref<'a' | 'b'>('a')
@@ -14,7 +14,6 @@ const wavePreset = ref('')
 const waveScale = ref(1.0)
 const nDerivative = ref(1)
 const textureFloor = ref(0)
-const windowOps = ref(4)
 const sampleStep = ref(1.0)
 const advanceSamples = ref(4.0)
 const envelopeCurve = ref('smoothstep')
@@ -23,25 +22,13 @@ const triggerTop = ref(0.8)
 const presets = ref<string[]>([])
 const msg = ref('')
 
-// Reactive params for wave simulator
-const simParams = computed(() => ({
-  wave_preset: wavePreset.value || null,
-  wave_scale: waveScale.value,
-  n_derivative: nDerivative.value,
-  texture_floor: textureFloor.value,
-  wave_window_ops: windowOps.value,
-  wave_sample_step: sampleStep.value,
-  wave_advance_samples: advanceSamples.value,
-  wave_envelope_curve: envelopeCurve.value,
-  trigger_range: { bottom: triggerBottom.value, top: triggerTop.value },
-}))
 
 async function loadPresets() {
   const data = await api('/api/v1/wave_presets')
   presets.value = data.presets || []
 }
 
-const unsaved = useUnsaved(() => ({ ch: ch.value, wavePreset: wavePreset.value, waveScale: waveScale.value, nDerivative: nDerivative.value, textureFloor: textureFloor.value, windowOps: windowOps.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+const unsaved = useUnsaved(() => ({ ch: ch.value, wavePreset: wavePreset.value, waveScale: waveScale.value, nDerivative: nDerivative.value, textureFloor: textureFloor.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
 
 async function load() {
   const data = await api(`/api/v1/mode_config/${ch.value}/touch`)
@@ -50,7 +37,6 @@ async function load() {
   waveScale.value = cfg.wave_scale ?? 1.0
   nDerivative.value = cfg.n_derivative ?? 1
   textureFloor.value = cfg.texture_floor ?? 0
-  windowOps.value = cfg.wave_window_ops ?? 4
   sampleStep.value = cfg.wave_sample_step ?? 1.0
   advanceSamples.value = cfg.wave_advance_samples ?? 4.0
   envelopeCurve.value = cfg.wave_envelope_curve || 'smoothstep'
@@ -65,7 +51,6 @@ async function save() {
     wave_scale: waveScale.value,
     n_derivative: nDerivative.value,
     texture_floor: textureFloor.value,
-    wave_window_ops: windowOps.value,
     wave_sample_step: sampleStep.value,
     wave_advance_samples: advanceSamples.value,
     wave_envelope_curve: envelopeCurve.value,
@@ -145,11 +130,7 @@ onMounted(() => { loadPresets(); load() })
           </div>
         </div>
 
-        <h2 class="card-subhead">{{ t('modeTouch.advancedWaveWindow') }}</h2>
-        <div class="field">
-          <label>{{ t('modeDistance.windowSize') }}: {{ windowOps }} ops</label>
-          <input type="range" v-model.number="windowOps" min="1" max="16" step="1">
-        </div>
+        <AdvancedSection>
         <div class="field">
           <label>{{ t('modeDistance.sampleStep') }}: {{ sampleStep.toFixed(2) }}</label>
           <input type="range" v-model.number="sampleStep" min="0.25" max="4" step="0.25">
@@ -162,18 +143,10 @@ onMounted(() => { loadPresets(); load() })
           <label>{{ t('modeDistance.envelope') }}</label>
           <AppSelect v-model="envelopeCurve" :options="[{ value: 'smoothstep', label: 'smoothstep' }, { value: 'linear', label: 'linear' }, { value: 'ease_in', label: 'ease_in' }, { value: 'ease_out', label: 'ease_out' }]" />
         </div>
+        </AdvancedSection>
       </section>
     </div>
 
-    <!-- Wave Simulator -->
-    <section class="card" style="margin-top:var(--sp-5)">
-      <h2>{{ t('common.waveSimulator') }}</h2>
-      <WaveSimulator
-        mode="touch"
-        :channel="ch"
-        :params="simParams"
-      />
-    </section>
 
     <div class="save-bar sticky">
       <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
