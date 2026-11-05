@@ -12,9 +12,16 @@ description: 提交代码到 GitHub。当用户说"提交"、"push"、"commit"�
 ```bash
 git config user.name "MoLiYue"
 git config user.email "moliyue018@gmail.com"
+git config commit.gpgsign false   # 全局 GPG key 是公司邮箱，不用于本仓库
 ```
 
-每次 commit 前检查 `git config user.name` / `git config user.email`。
+每次 commit 前检查 `git config user.name` / `git config user.email` / `git config commit.gpgsign`。
+
+## 不带 Change-Id
+
+`.git/hooks/commit-msg` 会调用 Gerrit 的 `commit-msg_gerrit` 自动加 Change-Id。本仓库已删除该符号链接（指向只读的
+`/env/PC/templates/hooks/commit-msg_gerrit`）；commit 前若它又出现，先 `rm .git/hooks/commit-msg_gerrit`。
+提交后用 `git log -1 --format=%B` 确认没有 Change-Id。
 
 ## 流程
 

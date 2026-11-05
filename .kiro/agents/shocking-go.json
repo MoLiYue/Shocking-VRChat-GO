@@ -1,0 +1,31 @@
+{
+  "name": "shocking-go",
+  "description": "Shocking-VRChat-GO 开发：Go + WebView2 重写版，GitHub 个人仓库，直接推 main，不走 Gerrit",
+  "prompt": "你在 /workspace/git/ehexyil/Shocking-VRChat-GO（Shocking-VRChat 的 Go + WebView2 重写版）工作。\n\n## 这是 GitHub 个人项目，不是 Gerrit 项目\n- remote 为 `github-personal:MoLiYue/Shocking-VRChat-GO.git`（~/.ssh/config 中的个人账户 SSH 别名），直接 `git push` 到 main，不要推 refs/for/*。\n- 全局 skill `git-push-gerrit` 的规则（Change-Id、GEN tag、Gerrit review）对本仓库一律不适用；按本仓库的 `.kiro/skills/git-push-github/SKILL.md` 执行。\n- 提交信息不要带 Change-Id / commit id，也不要加 `GEN:` trailer。本仓库已删除 `.git/hooks/commit-msg_gerrit` 符号链接（指向只读的 `/env/PC/templates/hooks/`，`ln -s` 可恢复）；commit 前若发现它又出现（`test -e .git/hooks/commit-msg_gerrit`），先 `rm` 掉再提交。提交后用 `git log -1 --format=%B` 确认消息里没有 Change-Id。\n- 必须使用个人身份：仓库级 `user.name=MoLiYue`、`user.email=moliyue018@gmail.com`，且 `commit.gpgsign=false`（全局 GPG key 是公司邮箱，不能用于本仓库）。commit 前用 `git config user.name; git config user.email; git config commit.gpgsign` 检查，不要修改全局 git 配置。\n- 提交信息用英文 conventional commits（`fix:` / `feat:` / `chore:` ...），标题 ≤ 70 字符。\n- 只在用户明确要求时 commit/push；`git add` 具体文件，不要 `git add .`；禁止 force push、reset --hard；未经要求不打 tag。\n\n## 工具链\n本机 PATH 没有 go / node，每次 shell 调用都需要在同一条命令里加 PATH：\n\n```bash\nexport PATH=/app/vbuild/RHEL9-x86_64/go/latest/bin:/app/vbuild/RHEL9-x86_64/nodejs/24.19.0/bin:$PATH\n```\n\ngo.mod 要求 go 1.26。不要下载安装其他 Go/Node 发行版。\n\n## 验证\n- 完整构建：`./build.sh`（前端 + packassets + go test + Windows exe/zip）；只改 Go 时可 `SKIP_FRONTEND=1 ./build.sh`。\n- 推送前：`gofmt -l .` 无输出、`go vet ./...`、`GOOS=windows go vet ./...`、`go test ./...`。\n- 改了前端要重新构建，`assets/static/` 里的产物（文件名带 hash，旧文件删除、新文件新增）需一起提交。\n- 本机是 Linux，Windows/WebView2 行为无法实际运行验证，要如实说明。",
+  "tools": ["*"],
+  "toolsSettings": {
+    "shell": {
+      "autoAllowReadonly": true,
+      "deniedCommands": [
+        "git push .*--force.*",
+        "git push .*-f( .*)?$",
+        "git push .*refs/for/.*",
+        "git reset --hard.*",
+        "git config --global.*"
+      ]
+    }
+  },
+  "resources": [
+    "file://README.md",
+    "file://go.mod",
+    "skill://.kiro/skills/**/SKILL.md"
+  ],
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "bash -c 'echo \"git: $(git config user.name) <$(git config user.email)> gpgsign=$(git config commit.gpgsign) remote=$(git remote get-url origin)\"; test -e .git/hooks/commit-msg_gerrit && echo \"WARN: commit-msg_gerrit 存在，会添加 Change-Id\" || true'"
+      }
+    ]
+  },
+  "welcomeMessage": "Shocking-VRChat-GO 已就绪（GitHub 个人账户，直接推 main，无 Change-Id）。"
+}
