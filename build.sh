@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="${VERSION:-0.7.6}"
+VERSION="${VERSION:-0.7.7}"
 LDFLAGS="-s -w -X shockingvrc/internal/app.Version=${VERSION}"
 if [[ -n "${GITHUB_REPO:-}" ]]; then
   LDFLAGS="$LDFLAGS -X shockingvrc/internal/app.GitHubRepo=${GITHUB_REPO}"
