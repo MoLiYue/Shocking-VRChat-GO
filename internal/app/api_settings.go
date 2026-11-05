@@ -401,7 +401,7 @@ func (a *App) apiParamsSetAll(r *http.Request) (any, error) {
 // ---------------------------------------------------------------- mode config
 
 var modeKeys = map[string][]string{
-	"shock":    {"duration", "wave_preset", "wave_scale", "wave"},
+	"shock":    {"duration", "wave_preset", "wave_scale", "wave", "follow_value", "min_strength"},
 	"distance": {"freq_ms", "wave_preset", "wave_scale", "texture_floor", "wave_window_ops", "wave_sample_step", "wave_advance_samples", "wave_envelope_curve"},
 	"touch": {"freq_ms", "wave_preset", "wave_scale", "n_derivative", "derivative_params", "texture_floor",
 		"wave_window_ops", "wave_sample_step", "wave_advance_samples", "wave_envelope_curve", "preset_bands"},

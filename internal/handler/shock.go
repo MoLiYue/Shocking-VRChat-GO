@@ -74,9 +74,16 @@ type Shock struct {
 	comboInTouchMode    bool
 	comboShockFired     bool
 	boostActive         bool
-	warnMu              sync.Mutex
-	warnLast            map[string]float64
-	spsCalcs            map[[2]string]*sps.Calculator
+	// aheadUntil is how far (unix seconds) the wave already sent to the
+	// APP reaches. The APP queues pulse data, so feeders only top it up to
+	// outputLead ahead instead of sending a whole window every tick (which
+	// piled up seconds of stale output and delayed every change).
+	aheadUntil float64
+	// shockPeak is the strength (0..1) the current shock started from.
+	shockPeak float64
+	warnMu    sync.Mutex
+	warnLast  map[string]float64
+	spsCalcs  map[[2]string]*sps.Calculator
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -288,8 +295,26 @@ func (h *Shock) shockDuration(mc config.M) float64 {
 	return math.Max(0.1, config.Float(h.modeConf(mc, "shock")["duration"], 2))
 }
 
-func (h *Shock) windowSize(mc config.M, mode string) int {
-	return config.ClampInt(config.Int(h.modeConf(mc, mode)["wave_window_ops"], 4), 1, 32)
+// Output pacing: one op is 100 ms of wave; feeders keep at most
+// outputLead buffered in the APP (plus up to one tick of jitter).
+const (
+	opSeconds  = 0.1
+	outputLead = 0.2
+	maxOpsSend = 4
+)
+
+// opsNeededLocked returns how many 100 ms ops to send now to keep
+// outputLead buffered. Must be called with h.mu held.
+func (h *Shock) opsNeededLocked(now float64) int {
+	buffered := math.Max(0, h.aheadUntil-now)
+	// Round to whole ops: timer jitter of a few ms must not add an op.
+	n := int(math.Floor((outputLead-buffered)/opSeconds + 0.5))
+	return config.ClampInt(n, 0, maxOpsSend)
+}
+
+// markSentLocked records that n ops were sent at now.
+func (h *Shock) markSentLocked(now float64, n int) {
+	h.aheadUntil = math.Max(h.aheadUntil, now) + float64(n)*opSeconds
 }
 
 func (h *Shock) sampleStep(mc config.M, mode string) float64 {
@@ -309,8 +334,9 @@ func presetOf(m config.M) string { return config.Str(m["wave_preset"], "") }
 
 func scaleOf(m config.M) float64 { return config.Float(m["wave_scale"], 1.0) }
 
-// buildDynamicWave must be called with h.mu held.
-func (h *Shock) buildDynamicWave(mc config.M, mode string, from, to float64, preset string, scale float64) string {
+// buildDynamicWave returns n ops (n*100 ms) of output ramping from -> to.
+// Must be called with h.mu held.
+func (h *Shock) buildDynamicWave(mc config.M, mode string, from, to float64, preset string, scale float64, n int) string {
 	scale = config.Clamp(scale, 0, 1)
 	lib := h.deps.Lib
 	if preset != "" && (mode == "distance" || mode == "touch") {
@@ -319,10 +345,13 @@ func (h *Shock) buildDynamicWave(mc config.M, mode string, from, to float64, pre
 			h.activeModePresets[mode] = preset
 		}
 		start := h.waveHeads[mode]
-		w := lib.BuildResampledWindow(preset, start, h.windowSize(mc, mode), scale,
+		// The window advances by exactly what is sent so the texture plays
+		// continuously. (As in the Python version, the preset texture is
+		// played at wave_scale; "to" only gates output on/off here.)
+		w := lib.BuildResampledWindow(preset, start, n, scale,
 			h.textureFloor(mc, mode), h.sampleStep(mc, mode))
 		if w != "" {
-			h.waveHeads[mode] = start + h.windowAdvance(mc, mode)
+			h.waveHeads[mode] = start + h.windowAdvance(mc, mode)*float64(n)
 			h.activeDynamicPreset = preset
 			return w
 		}
@@ -330,9 +359,9 @@ func (h *Shock) buildDynamicWave(mc config.M, mode string, from, to float64, pre
 	if preset != "" && mode == "shock" {
 		h.activeModePresets[mode] = preset
 		h.activeDynamicPreset = preset
-		w := lib.BuildScaledWindow(preset, int(h.waveHeads[mode]), h.windowSize(mc, mode), to*scale)
+		w := lib.BuildScaledWindow(preset, int(h.waveHeads[mode]), n, to*scale)
 		if w != "" {
-			h.waveHeads[mode]++
+			h.waveHeads[mode] += float64(n)
 			return w
 		}
 	}
@@ -340,13 +369,28 @@ func (h *Shock) buildDynamicWave(mc config.M, mode string, from, to float64, pre
 	h.activeDynamicPreset = ""
 	if mode == "shock" {
 		fallback := config.Str(h.modeConf(mc, "shock")["wave"], "")
-		if fallback == "" {
-			fallback = wave.DefaultWave
+		ops, err := wave.DecodeOps(fallback)
+		if err != nil || len(ops) == 0 {
+			ops, _ = wave.DecodeOps(wave.DefaultWave)
 		}
-		return wave.ScaleWavestr(fallback, clampUnit(to*scale))
+		out := make([]string, n)
+		for i := range out {
+			out[i] = wave.ScaleOp(ops[(int(h.waveHeads[mode])+i)%len(ops)], clampUnit(to*scale))
+		}
+		h.waveHeads[mode] += float64(n)
+		return wave.EncodeOps(out)
 	}
-	w, _ := wave.Generate100ms(h.freqMs(mc, mode), clampUnit(from), clampUnit(to))
-	return w
+	first, _ := wave.Generate100ms(h.freqMs(mc, mode), clampUnit(from), clampUnit(to))
+	if n <= 1 {
+		return first
+	}
+	steady, _ := wave.Generate100ms(h.freqMs(mc, mode), clampUnit(to), clampUnit(to))
+	ops, _ := wave.DecodeOps(first)
+	rest, _ := wave.DecodeOps(steady)
+	for i := 1; i < n; i++ {
+		ops = append(ops, rest...)
+	}
+	return wave.EncodeOps(ops)
 }
 
 func (h *Shock) resolveTouchProfile(mc config.M, strength float64) (string, float64) {
@@ -546,27 +590,63 @@ func (h *Shock) shockStrengthLocked(mc config.M, now float64) float64 {
 	if h.shockStartedAt <= 0 {
 		return 0
 	}
+	peak := h.shockPeak
+	if peak <= 0 {
+		peak = 1
+	}
 	elapsed := now - h.shockStartedAt
 	if elapsed <= 0 {
-		return 1
+		return peak
 	}
-	return math.Max(0, 1-elapsed/h.shockDuration(mc))
+	return peak * math.Max(0, 1-elapsed/h.shockDuration(mc))
 }
 
 func (h *Shock) handlerShock(distance float64, c *Context) {
 	mc := h.modeConfig()
-	if distance > h.triggerBottom(mc) {
-		dur := h.shockDuration(mc)
-		h.mu.Lock()
+	if distance <= h.triggerBottom(mc) {
+		return
+	}
+	level := 1.0
+	sc := h.modeConf(mc, "shock")
+	if config.Bool(sc["follow_value"], false) {
+		// Strength follows the value: mapped through the trigger range and
+		// strength curve onto [min_strength, 1].
+		n := h.applyStrengthCurve(h.normalizeDistance(mc, distance), c.Address)
+		minS := clampUnit(config.Float(sc["min_strength"], 0.2))
+		level = minS + (1-minS)*n
+	}
+	h.triggerShock(mc, level, c, distance)
+}
+
+// triggerShock starts (or raises) a shock at level (0..1). Output then
+// falls from level to 0 over the duration; a value at or above the current
+// (decaying) output restarts it, a weaker one lets it keep falling until it
+// meets that level. So steady input holds steady output and stronger input
+// is felt immediately.
+func (h *Shock) triggerShock(mc config.M, level float64, c *Context, distance float64) {
+	dur := h.shockDuration(mc)
+	now := nowSec()
+	h.mu.Lock()
+	cur := 0.0
+	if !h.isCleared {
+		cur = h.shockStrengthLocked(mc, now)
+	}
+	restarted := level >= cur-1e-9
+	if restarted {
 		h.setClearAfterLocked(dur)
-		h.shockStartedAt = nowSec()
-		h.shockLastStrength = 0
-		h.mu.Unlock()
+		h.shockStartedAt = now
+		h.shockPeak = level
+		if cur == 0 {
+			h.shockLastStrength = 0
+		}
+	}
+	h.mu.Unlock()
+	if restarted {
 		p := presetOf(h.modeConf(mc, "shock"))
 		if p == "" {
 			p = "-"
 		}
-		h.logTrigger(c, distance, nil, fmt.Sprintf("duration=%.2fs preset=%s action=reset-to-peak", dur, p))
+		h.logTrigger(c, distance, &level, fmt.Sprintf("duration=%.2fs preset=%s action=reset-to-peak", dur, p))
 	}
 }
 
@@ -696,7 +776,7 @@ func (h *Shock) handlerCombo(distance float64, c *Context) {
 	}
 	h.mu.Unlock()
 	if fire {
-		h.handlerShock(bottom+0.01, c)
+		h.triggerShock(mc, 1, c, distance)
 		logx.Debug("[handler] [combo] channel=%s fired shock (duration=%.2fs)", h.Channel, dur)
 	}
 }
@@ -743,12 +823,15 @@ func (h *Shock) distanceTick(last *float64) {
 	mc := h.modeConfig()
 	h.mu.Lock()
 	cur := h.bgCurrentStrength
-	if cur == 0 && *last == 0 {
+	now := nowSec()
+	n := h.opsNeededLocked(now)
+	if (cur == 0 && *last == 0) || n == 0 {
 		h.mu.Unlock()
 		return
 	}
 	dc := h.modeConf(mc, "distance")
-	w := h.buildDynamicWave(mc, "distance", *last, cur, presetOf(dc), scaleOf(dc))
+	w := h.buildDynamicWave(mc, "distance", *last, cur, presetOf(dc), scaleOf(dc), n)
+	h.markSentLocked(now, n)
 	preset := h.activeDynamicPreset
 	h.mu.Unlock()
 	if preset == "" {
@@ -760,15 +843,21 @@ func (h *Shock) distanceTick(last *float64) {
 	h.deps.Hub.BroadcastWave(h.Channel, w)
 }
 
-// shockOutputLocked computes the next shock wave; "" when idle.
+// shockOutputLocked computes the next shock wave; "" when idle or when
+// enough output is already buffered.
 func (h *Shock) shockOutputLocked(mc config.M, now float64) (string, float64) {
 	cur := h.shockStrengthLocked(mc, now)
 	if cur <= 0 {
 		h.shockLastStrength = 0
 		return "", 0
 	}
+	n := h.opsNeededLocked(now)
+	if n == 0 {
+		return "", cur
+	}
 	sc := h.modeConf(mc, "shock")
-	w := h.buildDynamicWave(mc, "shock", h.shockLastStrength, cur, presetOf(sc), scaleOf(sc))
+	w := h.buildDynamicWave(mc, "shock", h.shockLastStrength, cur, presetOf(sc), scaleOf(sc), n)
+	h.markSentLocked(now, n)
 	h.shockLastStrength = cur
 	return w, cur
 }
@@ -799,11 +888,14 @@ func (h *Shock) shockTick() {
 func (h *Shock) touchOutputLocked(mc config.M, last *float64) (string, float64, string, float64) {
 	cur := h.touchStrengthLocked(mc)
 	h.bgCurrentStrength = cur
-	if cur == 0 && *last == 0 {
+	now := nowSec()
+	n := h.opsNeededLocked(now)
+	if (cur == 0 && *last == 0) || n == 0 {
 		return "", 0, "", 0
 	}
 	p, s := h.resolveTouchProfile(mc, cur)
-	w := h.buildDynamicWave(mc, "touch", *last, cur, p, s)
+	w := h.buildDynamicWave(mc, "touch", *last, cur, p, s, n)
+	h.markSentLocked(now, n)
 	return w, cur, p, s
 }
 
@@ -863,6 +955,8 @@ func (h *Shock) clearTick() {
 		return
 	}
 	h.isCleared = true
+	h.aheadUntil = 0
+	h.shockPeak = 0
 	h.bgCurrentStrength = 0
 	h.touchDist = nil
 	h.activeDynamicPreset = ""
@@ -958,6 +1052,7 @@ func (h *Shock) Stop() {
 	h.boostActive = false
 	wasOutputting := !h.isCleared
 	h.isCleared = true
+	h.aheadUntil = 0
 	h.mu.Unlock()
 	if wasOutputting {
 		// The feeder is gone; stop whatever the APP still has buffered.

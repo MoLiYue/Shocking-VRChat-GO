@@ -98,9 +98,9 @@ func TestShockEnvelope(t *testing.T) {
 	}
 	// shock wave fallback is scaled default wave
 	h.mu.Lock()
-	w := h.buildDynamicWave(mc, "shock", 0, 0.5, "", 1)
+	w := h.buildDynamicWave(mc, "shock", 0, 0.5, "", 1, 2)
 	h.mu.Unlock()
-	if ops, _ := wave.DecodeOps(w); len(ops) != 10 || ops[0] != "0A0A0A0A32323232" {
+	if ops, _ := wave.DecodeOps(w); len(ops) != 2 || ops[0] != "0A0A0A0A32323232" {
 		t.Fatalf("shock wave %s", w)
 	}
 }
@@ -158,5 +158,87 @@ func TestSPSAggregationInOSC(t *testing.T) {
 	h.mu.Unlock()
 	if math.Abs(got-0.75) > 1e-9 { // 0.6 / 0.8 trigger top
 		t.Fatalf("strength %v", got)
+	}
+}
+
+// Feeders keep only ~200 ms queued in the APP instead of sending a whole
+// window every 100 ms tick (which piled up seconds of stale output).
+func TestOutputPacing(t *testing.T) {
+	h := newTestHandler(t, "distance")
+	sent := 0
+	h.deps.Hub.WaveObserver = func(_, w string) {
+		ops, _ := wave.DecodeOps(w)
+		sent += len(ops)
+	}
+	h.mu.Lock()
+	h.bgCurrentStrength = 0.5
+	h.mu.Unlock()
+	var last float64
+	h.distanceTick(&last)
+	if sent != 2 {
+		t.Fatalf("first tick sent %d ops, want 2 (200 ms lead)", sent)
+	}
+	h.distanceTick(&last)
+	if sent != 2 {
+		t.Fatalf("buffer full: sent %d ops, want none", sent)
+	}
+	h.mu.Lock()
+	h.aheadUntil = nowSec() + 0.1 // 100 ms played
+	h.mu.Unlock()
+	h.distanceTick(&last)
+	if sent != 3 {
+		t.Fatalf("steady state: sent %d ops total, want 3", sent)
+	}
+	// Over a simulated 2 s of ticks the APP never holds more than lead+1 op.
+	for i := 0; i < 20; i++ {
+		h.mu.Lock()
+		h.aheadUntil -= 0.1 // as if 100 ms elapsed
+		h.mu.Unlock()
+		h.distanceTick(&last)
+		h.mu.Lock()
+		buffered := h.aheadUntil - nowSec()
+		h.mu.Unlock()
+		if buffered > outputLead+opSeconds+0.01 {
+			t.Fatalf("tick %d: %.2fs buffered", i, buffered)
+		}
+	}
+}
+
+// With follow_value the shock strength follows the input: stronger input
+// raises it at once, weaker input lets it decay down to that level.
+func TestShockFollowValue(t *testing.T) {
+	h := newTestHandler(t, "shock")
+	h.deps.Cfg.Write(func(adv, _ config.M) {
+		sc := config.Sub(adv, true, "dglab3", "channel_a", "mode_config", "shock")
+		sc["follow_value"] = true
+		sc["min_strength"] = 0.2
+		sc["duration"] = 2
+		tr := config.Sub(adv, true, "dglab3", "channel_a", "mode_config", "trigger_range")
+		tr["bottom"], tr["top"] = 0.0, 1.0
+	})
+	peak := func() float64 {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.shockPeak
+	}
+	h.Handle(0.5, &Context{})
+	if got := peak(); math.Abs(got-0.6) > 1e-9 { // 0.2 + 0.8*0.5
+		t.Fatalf("peak %v, want 0.6", got)
+	}
+	h.Handle(0.25, &Context{}) // weaker: keep decaying from 0.6
+	if got := peak(); math.Abs(got-0.6) > 1e-9 {
+		t.Fatalf("weaker input restarted shock: peak %v", got)
+	}
+	h.Handle(1.0, &Context{})
+	if got := peak(); got != 1 {
+		t.Fatalf("stronger input: peak %v, want 1", got)
+	}
+	// Without follow_value every trigger is full strength (old behaviour).
+	h2 := newTestHandler(t, "shock")
+	h2.Handle(0.1, &Context{})
+	h2.mu.Lock()
+	defer h2.mu.Unlock()
+	if h2.shockPeak != 1 {
+		t.Fatalf("default peak %v", h2.shockPeak)
 	}
 }
