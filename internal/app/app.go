@@ -55,6 +55,7 @@ type App struct {
 
 	overlimitMu        sync.Mutex
 	overlimitRules     []any
+	overlimitState     []overlimitRuleState
 	oscParamState      map[string]any
 	overlimitEffective map[string]int
 

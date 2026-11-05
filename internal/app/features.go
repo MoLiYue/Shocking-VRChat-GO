@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"shockingvrc/internal/config"
@@ -164,6 +166,24 @@ func (a *App) apiCurveDelete(r *http.Request) (any, error) {
 
 func (a *App) overlimitPath() string { return a.Path("overlimit_rules.yaml") }
 
+// Overlimit rules temporarily raise a channel's strength cap:
+//
+//   - limit_boost: how much the cap is raised (on top of strength_limit)
+//   - decay_seconds: after the condition becomes true the boost falls back
+//     to 0 over this time; a new trigger (condition false -> true) restores
+//     the full boost. 0 = hold the boost while the condition is true.
+//   - decay_curve: shape of the fall-back (see decayRemaining): a preset
+//     name or a list of {x: elapsed fraction, y: remaining fraction} points.
+//
+// Several active rules on a channel do not add up: the largest current
+// boost wins.
+const defaultOverlimitDecay = 10.0
+
+type overlimitRuleState struct {
+	active    bool      // condition currently true
+	triggered time.Time // last false -> true transition
+}
+
 func (a *App) loadOverlimitRules() {
 	v, err := config.ReadYAMLFile(a.overlimitPath())
 	rules := []any{}
@@ -172,9 +192,52 @@ func (a *App) loadOverlimitRules() {
 			rules = l
 		}
 	}
+	migrated := a.migrateOverlimitRules(rules)
 	a.overlimitMu.Lock()
 	a.overlimitRules = rules
+	a.overlimitState = make([]overlimitRuleState, len(rules))
+	if migrated {
+		if err := a.saveOverlimitRulesLocked(); err != nil {
+			logx.Warn("[config] Could not save migrated overlimit rules: %v", err)
+		}
+	}
 	a.overlimitMu.Unlock()
+}
+
+// migrateOverlimitRules converts the old absolute limit_value ("raise the
+// cap to N") into limit_boost ("raise the cap by N") using the current
+// strength limits, so existing rules keep their peak.
+func (a *App) migrateOverlimitRules(rules []any) bool {
+	l := a.limitsFromSettings()
+	changed := false
+	for _, r := range rules {
+		rule := config.AsMap(r)
+		if rule == nil {
+			continue
+		}
+		if _, ok := rule["decay_seconds"]; !ok {
+			rule["decay_seconds"] = defaultOverlimitDecay
+			changed = true
+		}
+		if _, ok := rule["decay_curve"]; !ok {
+			rule["decay_curve"] = "linear"
+			changed = true
+		}
+		old, hasOld := rule["limit_value"]
+		if !hasOld {
+			continue
+		}
+		delete(rule, "limit_value")
+		changed = true
+		if _, ok := rule["limit_boost"]; ok {
+			continue
+		}
+		base := map[string]int{"a": l.LimitA, "b": l.LimitB, "both": max(l.LimitA, l.LimitB)}[config.Str(rule["channel"], "both")]
+		boost := max(0, config.Int(old, 0)-base)
+		rule["limit_boost"] = boost
+		logx.Info("[config] Overlimit rule %v: limit_value %v -> limit_boost +%d", rule["name"], old, boost)
+	}
+	return changed
 }
 
 func (a *App) saveOverlimitRulesLocked() error {
@@ -212,39 +275,158 @@ func evalCondition(cond config.M, state map[string]any) bool {
 	return false
 }
 
-// evaluateOverlimitLocked must be called with overlimitMu held.
-func (a *App) evaluateOverlimitLocked() {
-	maxL := map[string]int{"A": 0, "B": 0}
-	for _, r := range a.overlimitRules {
+// updateOverlimitTriggersLocked re-evaluates rule conditions, recording
+// false -> true transitions. Must be called with overlimitMu held.
+func (a *App) updateOverlimitTriggersLocked(now time.Time) {
+	if len(a.overlimitState) != len(a.overlimitRules) {
+		a.overlimitState = make([]overlimitRuleState, len(a.overlimitRules))
+	}
+	for i, r := range a.overlimitRules {
 		rule := config.AsMap(r)
-		if rule == nil || !config.Bool(orTrue(rule["enabled"]), true) {
+		on := rule != nil && config.Bool(orTrue(rule["enabled"]), true) &&
+			evalCondition(config.AsMap(rule["condition"]), a.oscParamState)
+		st := &a.overlimitState[i]
+		if on && !st.active {
+			st.triggered = now
+		}
+		st.active = on
+	}
+}
+
+// overlimitBoostsLocked returns the current (decayed) boost per channel.
+// Must be called with overlimitMu held.
+func (a *App) overlimitBoostsLocked(now time.Time) map[string]int {
+	out := map[string]int{"A": 0, "B": 0}
+	for i, r := range a.overlimitRules {
+		rule := config.AsMap(r)
+		if rule == nil || i >= len(a.overlimitState) || !config.Bool(orTrue(rule["enabled"]), true) {
 			continue
 		}
-		if !evalCondition(config.AsMap(rule["condition"]), a.oscParamState) {
+		st := a.overlimitState[i]
+		if st.triggered.IsZero() {
 			continue
 		}
-		v := config.Int(rule["limit_value"], 0)
+		full := config.ClampInt(config.Int(rule["limit_boost"], 0), 0, 200)
+		decay := config.Float(rule["decay_seconds"], defaultOverlimitDecay)
+		var v int
+		if decay <= 0 {
+			if st.active {
+				v = full
+			}
+		} else {
+			left := decayRemaining(rule["decay_curve"], now.Sub(st.triggered).Seconds()/decay)
+			v = int(math.Ceil(float64(full)*left - 1e-9))
+		}
 		ch := config.Str(rule["channel"], "both")
-		if (ch == "a" || ch == "both") && v > maxL["A"] {
-			maxL["A"] = v
+		if (ch == "a" || ch == "both") && v > out["A"] {
+			out["A"] = v
 		}
-		if (ch == "b" || ch == "both") && v > maxL["B"] {
-			maxL["B"] = v
+		if (ch == "b" || ch == "both") && v > out["B"] {
+			out["B"] = v
 		}
 	}
-	if maxL["A"] == a.overlimitEffective["A"] && maxL["B"] == a.overlimitEffective["B"] {
-		return
+	return out
+}
+
+// DecayCurves are the preset fall-back shapes: remaining boost fraction
+// for elapsed fraction t in [0,1].
+var DecayCurves = map[string]func(t float64) float64{
+	"linear":     func(t float64) float64 { return 1 - t },
+	"ease_out":   func(t float64) float64 { return (1 - t) * (1 - t) }, // drops fast, then slowly
+	"ease_in":    func(t float64) float64 { return 1 - t*t },           // stays high, then drops
+	"smoothstep": func(t float64) float64 { return 1 - t*t*(3-2*t) },   // gentle start and end
+	"hold":       func(t float64) float64 { return 1 },                 // full until the end
+	"exp":        func(t float64) float64 { return (math.Exp(-4*t) - math.Exp(-4)) / (1 - math.Exp(-4)) },
+}
+
+// decayRemaining returns the remaining boost fraction (0..1) after elapsed
+// fraction t of the decay time. curve is a preset name or a list of
+// {x, y} points (x = elapsed fraction, y = remaining fraction, linearly
+// interpolated). Whatever the curve, the boost is 1 at t<=0 and 0 at t>=1
+// so it always returns to the normal limit.
+func decayRemaining(curve any, t float64) float64 {
+	if t <= 0 {
+		return 1
 	}
-	a.overlimitEffective["A"], a.overlimitEffective["B"] = maxL["A"], maxL["B"]
-	l := a.limitsFromSettings()
-	capA, capB := l.OverlimitA, l.OverlimitB
-	if maxL["A"] > 0 {
-		capA = maxL["A"]
+	if t >= 1 || math.IsNaN(t) {
+		return 0
 	}
-	if maxL["B"] > 0 {
-		capB = maxL["B"]
+	var v float64
+	if pts := decayPoints(curve); len(pts) > 0 {
+		v = interpolatePoints(pts, t)
+	} else if f := DecayCurves[config.Str(curve, "linear")]; f != nil {
+		v = f(t)
+	} else {
+		v = 1 - t
 	}
-	a.Hub.SetOverlimit(maxL["A"] > 0, maxL["B"] > 0, capA, capB)
+	return config.Clamp(v, 0, 1)
+}
+
+type curvePoint struct{ x, y float64 }
+
+// decayPoints parses custom points, sorted by x with endpoints (0,1) and
+// (1,0) added when missing. nil if curve is not a point list.
+func decayPoints(curve any) []curvePoint {
+	list := config.AsList(curve)
+	if len(list) == 0 {
+		return nil
+	}
+	pts := make([]curvePoint, 0, len(list)+2)
+	for _, p := range list {
+		m := config.AsMap(p)
+		x, ok1 := config.ToFloat(m["x"])
+		y, ok2 := config.ToFloat(m["y"])
+		if m == nil || !ok1 || !ok2 {
+			continue
+		}
+		pts = append(pts, curvePoint{config.Clamp(x, 0, 1), config.Clamp(y, 0, 1)})
+	}
+	if len(pts) == 0 {
+		return nil
+	}
+	sort.SliceStable(pts, func(i, j int) bool { return pts[i].x < pts[j].x })
+	if pts[0].x > 0 {
+		pts = append([]curvePoint{{0, 1}}, pts...)
+	}
+	if pts[len(pts)-1].x < 1 {
+		pts = append(pts, curvePoint{1, 0})
+	}
+	return pts
+}
+
+func interpolatePoints(pts []curvePoint, t float64) float64 {
+	for i := 0; i+1 < len(pts); i++ {
+		a, b := pts[i], pts[i+1]
+		if t >= a.x && t <= b.x {
+			if b.x-a.x <= 0 {
+				return b.y
+			}
+			return a.y + (t-a.x)/(b.x-a.x)*(b.y-a.y)
+		}
+	}
+	return pts[len(pts)-1].y
+}
+
+// overlimitLoop applies the decaying boosts (every 100 ms; caps are only
+// pushed to devices when the integer value changes).
+func (a *App) overlimitLoop(ctx context.Context) {
+	for sleepCtx(ctx, 100*time.Millisecond) {
+		a.overlimitTick(time.Now())
+	}
+}
+
+func (a *App) overlimitTick(now time.Time) {
+	a.overlimitMu.Lock()
+	b := a.overlimitBoostsLocked(now)
+	changed := b["A"] != a.overlimitEffective["A"] || b["B"] != a.overlimitEffective["B"]
+	if changed {
+		logx.Debug("[overlimit] boost A +%d B +%d", b["A"], b["B"])
+		a.overlimitEffective["A"], a.overlimitEffective["B"] = b["A"], b["B"]
+	}
+	a.overlimitMu.Unlock()
+	if changed {
+		a.Hub.SetLimitBoost(b["A"], b["B"])
+	}
 }
 
 func orTrue(v any) any {
@@ -261,7 +443,7 @@ func (a *App) overlimitOSCHook(addr string, args []any) {
 		a.oscParamState[addr] = args[0]
 	}
 	if len(a.overlimitRules) > 0 {
-		a.evaluateOverlimitLocked()
+		a.updateOverlimitTriggersLocked(time.Now())
 	}
 }
 
@@ -282,11 +464,15 @@ func (a *App) apiOverlimitSet(r *http.Request) (any, error) {
 	}
 	a.overlimitMu.Lock()
 	defer a.overlimitMu.Unlock()
+	a.migrateOverlimitRules(rules)
 	a.overlimitRules = rules
 	if err := a.saveOverlimitRulesLocked(); err != nil {
 		return nil, err
 	}
-	a.evaluateOverlimitLocked()
+	// Edited rules start fresh: a condition that is already true counts
+	// as a new trigger.
+	a.overlimitState = nil
+	a.updateOverlimitTriggersLocked(time.Now())
 	logx.Info("[config] Overlimit rules saved: %d rules", len(rules))
 	return map[string]any{"success": true, "rules": rules}, nil
 }
@@ -303,10 +489,12 @@ func (a *App) apiOverlimitDelete(r *http.Request) (any, error) {
 	}
 	removed := config.AsMap(a.overlimitRules[idx])
 	a.overlimitRules = append(a.overlimitRules[:idx:idx], a.overlimitRules[idx+1:]...)
+	if idx < len(a.overlimitState) {
+		a.overlimitState = append(a.overlimitState[:idx:idx], a.overlimitState[idx+1:]...)
+	}
 	if err := a.saveOverlimitRulesLocked(); err != nil {
 		return nil, err
 	}
-	a.evaluateOverlimitLocked()
 	name := any(idx)
 	if removed != nil && removed["name"] != nil {
 		name = removed["name"]

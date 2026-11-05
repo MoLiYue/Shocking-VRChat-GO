@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"math"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -345,10 +346,11 @@ func TestSettingsAPIs(t *testing.T) {
 	}
 	// overlimit rules
 	e.postJSON(t, "/api/v1/overlimit_rules", map[string]any{"rules": []any{map[string]any{
-		"name": "r", "channel": "a", "limit_value": 90, "condition": map[string]any{"param": "/p", "operator": ">", "value": 0.5}}}})
+		"name": "r", "channel": "a", "limit_boost": 40, "condition": map[string]any{"param": "/p", "operator": ">", "value": 0.5}}}})
 	e.a.overlimitOSCHook("/p", []any{0.9})
+	e.a.overlimitTick(time.Now())
 	o := e.getJSON(t, "/api/v1/overlimit_rules")
-	if config.Int(config.Get(o, "effective", "A"), 0) != 90 {
+	if config.Int(config.Get(o, "effective", "A"), 0) != 40 {
 		t.Fatal(o)
 	}
 	// profiles
@@ -771,5 +773,171 @@ func TestBoostRevertSubtractsOnlyApplied(t *testing.T) {
 	e.a.Hub.BroadcastBoost("A", false, 30)
 	if got := strengthMsgs(300 * time.Millisecond); len(got) != 0 {
 		t.Fatalf("capped boost must not change strength, got %v", got)
+	}
+}
+
+// Downloads have no overall deadline (slow mirrors), but a stalled
+// connection is aborted after downloadIdle without data.
+func TestDownloadIdleTimeout(t *testing.T) {
+	old := downloadIdle
+	downloadIdle = 300 * time.Millisecond
+	defer func() { downloadIdle = old }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fl := w.(http.Flusher)
+		if r.URL.Path == "/slow" { // slow but steady: total > idle, must succeed
+			for i := 0; i < 5; i++ {
+				_, _ = w.Write([]byte("chunk"))
+				fl.Flush()
+				time.Sleep(150 * time.Millisecond)
+			}
+			return
+		}
+		_, _ = w.Write([]byte("start")) // then stall
+		fl.Flush()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer srv.Close()
+	e := newEnv(t)
+	dir := t.TempDir()
+	n, err := e.a.download(srv.URL+"/slow", filepath.Join(dir, "a"), 0)
+	if err != nil || n != 25 {
+		t.Fatalf("slow download: n=%d err=%v", n, err)
+	}
+	start := time.Now()
+	if _, err := e.a.download(srv.URL+"/stall", filepath.Join(dir, "b"), 0); err == nil || !strings.Contains(err.Error(), "stalled") {
+		t.Fatalf("stalled download: err=%v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("stall not detected promptly")
+	}
+}
+
+// Overlimit rules raise the cap BY limit_boost and decay back linearly over
+// decay_seconds; only a new false -> true transition re-arms the boost.
+func TestOverlimitBoostDecays(t *testing.T) {
+	e := newEnv(t) // strength limits are 50
+	e.postJSON(t, "/api/v1/overlimit_rules", map[string]any{"rules": []any{
+		map[string]any{"name": "big", "channel": "a", "limit_boost": 30, "decay_seconds": 10,
+			"condition": map[string]any{"param": "/p", "operator": "==", "value": 1}},
+		map[string]any{"name": "hold", "channel": "b", "limit_boost": 20, "decay_seconds": 0,
+			"condition": map[string]any{"param": "/q", "operator": "==", "value": 1}},
+	}})
+	a := e.a
+	boosts := func(at time.Time) map[string]int {
+		a.overlimitMu.Lock()
+		defer a.overlimitMu.Unlock()
+		return a.overlimitBoostsLocked(at)
+	}
+	a.overlimitOSCHook("/p", []any{1.0})
+	a.overlimitOSCHook("/q", []any{1.0})
+	a.overlimitMu.Lock()
+	t0 := a.overlimitState[0].triggered
+	a.overlimitMu.Unlock()
+	for _, c := range []struct {
+		dt   float64
+		a, b int
+	}{{0, 30, 20}, {5, 15, 20}, {9.9, 1, 20}, {10, 0, 20}, {60, 0, 20}} {
+		got := boosts(t0.Add(time.Duration(c.dt * float64(time.Second))))
+		if got["A"] != c.a || got["B"] != c.b {
+			t.Fatalf("t=%vs: got %v, want A=%d B=%d", c.dt, got, c.a, c.b)
+		}
+	}
+	// Still true: no re-arm. Hold rule drops as soon as its condition ends.
+	a.overlimitOSCHook("/p", []any{1.0})
+	a.overlimitOSCHook("/q", []any{0.0})
+	if got := boosts(t0.Add(11 * time.Second)); got["A"] != 0 || got["B"] != 0 {
+		t.Fatalf("got %v, want no boost", got)
+	}
+	// false -> true re-arms the full boost.
+	a.overlimitOSCHook("/p", []any{0.0})
+	a.overlimitOSCHook("/p", []any{1.0})
+	if got := boosts(time.Now()); got["A"] != 30 {
+		t.Fatalf("re-trigger: got %v", got)
+	}
+	// The cap applied to devices is limit + boost.
+	a.overlimitTick(time.Now())
+	if got := config.Int(config.Get(e.getJSON(t, "/api/v1/overlimit_rules"), "effective", "A"), 0); got != 30 {
+		t.Fatalf("effective A = %d", got)
+	}
+}
+
+// Old rules with an absolute limit_value are converted to a boost.
+func TestOverlimitMigratesLimitValue(t *testing.T) {
+	e := newEnv(t) // strength limits are 50
+	path := e.a.overlimitPath()
+	if err := config.WriteYAMLAtomic(path, map[string]any{"rules": []any{
+		map[string]any{"name": "old", "channel": "a", "limit_value": 80,
+			"condition": map[string]any{"param": "/p", "operator": "==", "value": 1}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	e.a.loadOverlimitRules()
+	r := config.AsMap(config.AsList(e.getJSON(t, "/api/v1/overlimit_rules")["rules"])[0])
+	if config.Int(r["limit_boost"], -1) != 30 || r["limit_value"] != nil || config.Float(r["decay_seconds"], -1) != defaultOverlimitDecay {
+		t.Fatalf("migrated rule: %v", r)
+	}
+	v, _ := config.ReadYAMLFile(path)
+	if r := config.AsMap(config.AsList(config.AsMap(v)["rules"])[0]); config.Int(r["limit_boost"], -1) != 30 {
+		t.Fatalf("migration not saved: %v", r)
+	}
+}
+
+// Boost changes are pushed to the APP: cap rises to limit+boost and
+// follows the decay back down.
+func TestLimitBoostPushedToDevice(t *testing.T) {
+	e := newEnv(t) // limits are 50
+	app := dialMockApp(t, e)
+	master := config.Str(e.a.Cfg.Get("ws", "master_uuid"), "")
+	devID := app.waitFor(func(v map[string]string) bool { return v["type"] == "bind" }, 2*time.Second)["clientId"]
+	app.send(map[string]string{"type": "bind", "clientId": master, "targetId": devID, "message": "DGLAB"})
+	app.send(map[string]string{"type": "msg", "clientId": master, "targetId": devID, "message": "strength-50+0+200+200"})
+	time.Sleep(100 * time.Millisecond)
+	isSetA := func(v map[string]string) bool { return strings.HasPrefix(v["message"], "strength-1+2+") }
+	e.a.Hub.SetLimitBoost(30, 0)
+	if got := app.waitFor(isSetA, 2*time.Second)["message"]; got != "strength-1+2+80" {
+		t.Fatalf("boost push: %s", got)
+	}
+	e.a.Hub.SetLimitBoost(10, 0)
+	if got := app.waitFor(isSetA, 2*time.Second)["message"]; got != "strength-1+2+60" {
+		t.Fatalf("decay push: %s", got)
+	}
+	e.a.Hub.SetLimitBoost(0, 0)
+	if got := app.waitFor(isSetA, 2*time.Second)["message"]; got != "strength-1+2+50" {
+		t.Fatalf("back to normal: %s", got)
+	}
+}
+
+func TestDecayCurves(t *testing.T) {
+	custom := []any{ // hold full for half the time, then drop to 20%, then 0
+		map[string]any{"x": 0.5, "y": 1},
+		map[string]any{"x": 0.6, "y": 0.2},
+	}
+	cases := []struct {
+		curve any
+		t     float64
+		want  float64
+	}{
+		{"linear", 0.25, 0.75},
+		{nil, 0.25, 0.75}, // default linear
+		{"ease_out", 0.5, 0.25},
+		{"ease_in", 0.5, 0.75},
+		{"smoothstep", 0.5, 0.5},
+		{"hold", 0.99, 1},
+		{"exp", 0, 1},
+		{"unknown", 0.5, 0.5},
+		{custom, 0.3, 1},
+		{custom, 0.55, 0.6},
+		{custom, 0.8, 0.1}, // (0.6,0.2) -> implicit (1,0)
+		{"hold", 1, 0},     // every curve ends at 0
+		{custom, 1.5, 0},
+		{"ease_in", -1, 1},
+	}
+	for _, c := range cases {
+		if got := decayRemaining(c.curve, c.t); math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("decayRemaining(%v, %v) = %v, want %v", c.curve, c.t, got, c.want)
+		}
 	}
 }

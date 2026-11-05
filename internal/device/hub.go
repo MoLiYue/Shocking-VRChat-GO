@@ -47,6 +47,9 @@ type chanState struct {
 	strengthLimit   map[string]int
 	overlimitMax    map[string]int
 	overlimitActive map[string]bool
+	// limitBoost is the temporary cap increase from overlimit rules
+	// (added on top of strengthLimit, decays back to 0 over time).
+	limitBoost map[string]int
 	// boosted is the strength actually added by an active boost-mode
 	// handler (after capping), so reverting subtracts exactly that.
 	boosted map[string]int
@@ -59,16 +62,14 @@ func newChanState(l Limits, initialMax int) *chanState {
 		strengthLimit:   map[string]int{"A": l.LimitA, "B": l.LimitB},
 		overlimitMax:    map[string]int{"A": l.OverlimitA, "B": l.OverlimitB},
 		overlimitActive: map[string]bool{"A": false, "B": false},
+		limitBoost:      map[string]int{"A": 0, "B": 0},
 		boosted:         map[string]int{"A": 0, "B": 0},
 	}
 }
 
-// upperLocked returns min(strength_max, limit or overlimit cap).
+// upperLocked returns min(strength_max, limit + overlimit boost, 200).
 func (s *chanState) upperLocked(ch string) int {
-	limit := s.strengthLimit[ch]
-	if s.overlimitActive[ch] && s.overlimitMax[ch] > limit {
-		limit = s.overlimitMax[ch]
-	}
+	limit := min(200, s.strengthLimit[ch]+max(0, s.limitBoost[ch]))
 	if s.strengthMax[ch] < limit {
 		return s.strengthMax[ch]
 	}
@@ -107,6 +108,7 @@ type Hub struct {
 	WaveObserver  func(ch, wavestr string)
 	ClearObserver func(ch string)
 	limits        atomic.Pointer[Limits]
+	limitBoost    atomic.Pointer[[2]int]
 }
 
 // NewHub creates an empty hub.
@@ -126,6 +128,13 @@ func (h *Hub) SetSuppressClear(v bool) { h.suppressClear.Store(v) }
 func (h *Hub) SuppressClear() bool { return h.suppressClear.Load() }
 
 func (h *Hub) add(d Device) {
+	if b := h.limitBoost.Load(); b != nil {
+		s := d.state()
+		s.mu.Lock()
+		s.limitBoost["A"], s.limitBoost["B"] = b[0], b[1]
+		s.overlimitActive["A"], s.overlimitActive["B"] = b[0] > 0, b[1] > 0
+		s.mu.Unlock()
+	}
 	h.mu.Lock()
 	if _, ok := h.devices[d]; !ok {
 		h.devices[d] = struct{}{}
@@ -295,15 +304,20 @@ func (h *Hub) applyLimits(devs []Device) {
 	}
 }
 
-// SetOverlimit updates the overlimit flags/caps on every device.
-func (h *Hub) SetOverlimit(activeA, activeB bool, maxA, maxB int) {
-	for _, d := range h.Devices() {
+// SetLimitBoost sets the overlimit cap increase per channel on every
+// device and pushes the resulting caps synchronously (callers serialize,
+// so pushes are never reordered).
+func (h *Hub) SetLimitBoost(boostA, boostB int) {
+	h.limitBoost.Store(&[2]int{boostA, boostB})
+	devs := h.Devices()
+	for _, d := range devs {
 		s := d.state()
 		s.mu.Lock()
-		s.overlimitActive["A"], s.overlimitActive["B"] = activeA, activeB
-		s.overlimitMax["A"], s.overlimitMax["B"] = maxA, maxB
+		s.limitBoost["A"], s.limitBoost["B"] = boostA, boostB
+		s.overlimitActive["A"], s.overlimitActive["B"] = boostA > 0, boostB > 0
 		s.mu.Unlock()
 	}
+	h.applyLimits(devs)
 }
 
 // CloseAll disconnects every device.
