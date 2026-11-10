@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
+import { openShareExport, shareState } from '@/share'
 import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { themePref, setTheme, type ThemePref } from '@/theme'
 import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
@@ -487,6 +488,12 @@ onUnmounted(() => { stopProgressPolling() })
         <button class="btn btn-ghost" @click="triggerImport">{{ t('settings.importConfig') }}</button>
         <input ref="importFileRef" type="file" accept=".json" hidden @change="handleImport">
         <span class="msg" :class="{ err: importErr }">{{ importMsg }}</span>
+      </div>
+      <h2 style="margin-top:var(--sp-5)">{{ t('share.sectionTitle') }}</h2>
+      <p class="hint" style="margin-bottom:var(--sp-3)">{{ t('share.sectionDesc') }}</p>
+      <div class="ie-bar">
+        <button class="btn btn-ghost" @click="openShareExport">{{ t('share.exportTitle') }}</button>
+        <button class="btn btn-ghost" @click="shareState.importOpen = true">{{ t('share.importTitle') }}</button>
       </div>
     </section>
 

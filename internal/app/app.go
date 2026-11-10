@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"shockingvrc/internal/config"
@@ -71,7 +72,9 @@ type App struct {
 
 	chatbox *chatboxSender
 	monitor *paramMonitor
-	monStop chan struct{}
+	// avatarID is the last /avatar/change id (for share cards).
+	avatarID atomic.Value
+	monStop  chan struct{}
 
 	upd *updater
 

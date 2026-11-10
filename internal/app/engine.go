@@ -345,6 +345,11 @@ func (a *App) oscGlobalHook(addr string, args []any) {
 	}
 	a.rec.record(addr, args)
 	a.monitor.record(addr, args)
+	if addr == "/avatar/change" && len(args) > 0 {
+		if id, ok := args[0].(string); ok {
+			a.avatarID.Store(id)
+		}
+	}
 }
 
 func (a *App) commandQueueProcessor(ctx context.Context) {

@@ -9,6 +9,9 @@ import {
 import { useI18n } from '@/i18n'
 import TourOverlay from '@/tour/TourOverlay.vue'
 import AppDialog from '@/components/AppDialog.vue'
+import ShareExportDialog from '@/components/ShareExportDialog.vue'
+import ShareImportDialog from '@/components/ShareImportDialog.vue'
+import { previewShare } from '@/share'
 import TopProgress from '@/components/TopProgress.vue'
 import { appStatus, startStatusPolling } from '@/status'
 import { confirmDialog } from '@/dialog'
@@ -124,7 +127,41 @@ function onKey(e: KeyboardEvent) {
 }
 onUnmounted(() => window.removeEventListener('keydown', onKey))
 
+// Drop a share card (.png), .svrc or .json anywhere to import it.
+const dragging = ref(false)
+let dragDepth = 0
+const isFileDrag = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')
+function onDragEnter(e: DragEvent) { if (isFileDrag(e)) { dragDepth++; dragging.value = true } }
+function onDragLeave(e: DragEvent) { if (isFileDrag(e) && --dragDepth <= 0) { dragDepth = 0; dragging.value = false } }
+function onDragOver(e: DragEvent) { if (isFileDrag(e)) e.preventDefault() }
+function onDrop(e: DragEvent) {
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  dragDepth = 0; dragging.value = false
+  const f = e.dataTransfer!.files[0]
+  if (f) previewShare(f)
+}
+// Pasting a share code (Ctrl+V outside inputs) opens the import preview.
+function onPaste(e: ClipboardEvent) {
+  const el = e.target as HTMLElement
+  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+  const text = e.clipboardData?.getData('text') || ''
+  if (text.trim().startsWith('SVRC1:')) { e.preventDefault(); previewShare(text) }
+}
+onUnmounted(() => {
+  window.removeEventListener('dragenter', onDragEnter)
+  window.removeEventListener('dragleave', onDragLeave)
+  window.removeEventListener('dragover', onDragOver)
+  window.removeEventListener('drop', onDrop)
+  window.removeEventListener('paste', onPaste)
+})
+
 onMounted(() => {
+  window.addEventListener('dragenter', onDragEnter)
+  window.addEventListener('dragleave', onDragLeave)
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('drop', onDrop)
+  window.addEventListener('paste', onPaste)
   window.addEventListener('keydown', onKey)
   startStatusPolling()
   // First run (no tour_done in localStorage) auto-starts the onboarding tour.
@@ -242,12 +279,17 @@ onMounted(() => {
 
     <!-- Guided tour coachmark overlay -->
     <TourOverlay />
+    <ShareExportDialog />
+    <ShareImportDialog />
+    <div v-if="dragging" class="drop-overlay"><div>{{ t('share.dropOverlay') }}</div></div>
     <AppDialog />
     <TopProgress />
   </div>
 </template>
 
 <style scoped>
+.drop-overlay { position: fixed; inset: 0; z-index: 950; display: grid; place-items: center; background: var(--overlay); pointer-events: none; }
+.drop-overlay div { padding: 28px 40px; border: 2px dashed var(--accent); border-radius: var(--radius-xl); background: var(--bg-popover); font-size: var(--text-lg); color: var(--text); }
 .shell {
   display: grid;
   grid-template-columns: 208px 1fr;
