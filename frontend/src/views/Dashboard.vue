@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { themeColor } from '@/canvasFont'
-import { formatTime } from '@/time'
-import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api } from '@/api'
 import QrCode from '@/components/QrCode.vue'
 import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp } from 'lucide-vue-next'
@@ -27,7 +26,11 @@ const usedParams = ref<UsedParam[]>([])
 const activeUsedParams = computed(() => usedParams.value.filter((p) => p.sources.some((s) => s.enabled)))
 const oscStatus = ref('')
 const lastTrigger = ref('-')
-const oscEvents = ref<any[]>([])
+// Latest value per parameter straight from the live OSC feed (the value
+// the program actually uses); the 1 s poll covers params not routed to a
+// mode (e.g. only used by overlimit rules).
+const liveValues = reactive<Record<string, { v: unknown; at: number }>>({})
+const nowMs = ref(Date.now())
 const canvasARef = ref<HTMLCanvasElement | null>(null)
 const canvasBRef = ref<HTMLCanvasElement | null>(null)
 // Function ref: string refs inside v-for would collect into arrays.
@@ -85,8 +88,7 @@ function connectLiveWs() {
         pendingB.push(...msg.samples)
       } else if (msg.topic === 'osc' && msg.event) {
         oscStamps.push(Date.now())
-        oscEvents.value.unshift(msg.event)
-        if (oscEvents.value.length > 20) oscEvents.value = oscEvents.value.slice(0, 20)
+        liveValues[msg.event.address] = { v: msg.event.value, at: Date.now() }
         lastTrigger.value = t('dashboard.justNow')
       } else if (msg.topic === 'status') {
         const devices = msg.devices || []
@@ -312,6 +314,15 @@ function sourceLabel(s: UsedSource) {
   if (s.kind === 'param') return `${s.channel} · ${modeLabel(s.mode || '')}`
   return `${t('dashboard.usedOverlimit')} · ${s.rule || '-'}`
 }
+function currentValue(p: UsedParam): unknown {
+  const l = liveValues[p.path]
+  if (l && (p.last_seen_ago == null || Date.now() - l.at < p.last_seen_ago * 1000 + 1000)) return l.v
+  return p.last_value
+}
+function isFresh(p: UsedParam) {
+  const l = liveValues[p.path]
+  return (l && nowMs.value - l.at < 2000) || (p.last_seen_ago != null && p.last_seen_ago < 2)
+}
 function fmtValue(v: unknown) {
   if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(3)
   return String(v)
@@ -324,7 +335,6 @@ function fmtAgo(sec?: number) {
   return `${Math.round(sec / 3600)}h`
 }
 function shortPath(addr: string) { return addr.replace('/avatar/parameters/', '') }
-const timeStr = formatTime
 
 function startLive() {
   if (liveWanted) return
@@ -335,7 +345,8 @@ function startLive() {
   startWaveAnim()
   intervals.push(window.setInterval(pollStatus, 5000))
   intervals.push(window.setInterval(updateOscRate, 1000))
-  intervals.push(window.setInterval(pollUsedParams, 2000))
+  intervals.push(window.setInterval(pollUsedParams, 1000))
+  intervals.push(window.setInterval(() => { nowMs.value = Date.now() }, 500))
 }
 function stopLive() {
   intervals.forEach(clearInterval)
@@ -411,20 +422,6 @@ onUnmounted(stopLive)
           </div>
         </section>
 
-        <!-- OSC Feed -->
-        <section class="card">
-          <h2>{{ t('dashboard.oscEvents') }}</h2>
-          <div class="osc-feed">
-            <div class="osc-row" v-for="(e, i) in oscEvents.slice(0, 8)" :key="i">
-              <span class="ch-tag sm" :class="'ch-' + e.channel.toLowerCase()">{{ e.channel }}</span>
-              <span class="osc-path">{{ shortPath(e.address) }}</span>
-              <span class="osc-mode">{{ e.mode }}</span>
-              <span class="osc-val">{{ e.value }}</span>
-              <span class="osc-time">{{ timeStr(e.time) }}</span>
-            </div>
-            <div v-if="!oscEvents.length" class="empty">{{ t('dashboard.noEvents') }}</div>
-          </div>
-        </section>
 
         <!-- Parameters the configuration listens to -->
         <section class="card">
@@ -434,12 +431,10 @@ onUnmounted(stopLive)
           </div>
           <div class="used-list">
             <div v-for="p in activeUsedParams" :key="p.path" class="used-row">
-              <div class="used-top">
-                <span class="live-dot" :class="{ on: p.last_seen_ago != null && p.last_seen_ago < 2 }" />
-                <span class="used-path" :title="p.path">{{ shortPath(p.path) }}</span>
-                <span v-if="p.last_value !== undefined" class="used-val" :title="fmtAgo(p.last_seen_ago)">{{ fmtValue(p.last_value) }}</span>
-              </div>
-              <div class="used-tags">
+              <span class="live-dot" :class="{ on: isFresh(p) }" />
+              <span class="used-path" :title="p.path">{{ shortPath(p.path) }}</span>
+              <span class="used-val" :class="{ none: currentValue(p) === undefined }">{{ currentValue(p) === undefined ? '—' : fmtValue(currentValue(p)) }}</span>
+              <span class="used-tags">
                 <span v-for="(s, i) in p.sources.filter((x) => x.enabled)" :key="'on' + i" class="used-tag" :class="s.kind"
                   :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
                 <template v-if="p.sources.some((x) => !x.enabled)">
@@ -447,9 +442,8 @@ onUnmounted(stopLive)
                   <span v-for="(s, i) in p.sources.filter((x) => !x.enabled)" :key="'off' + i" class="used-tag off" :class="s.kind"
                     :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
                 </template>
-                <span v-if="p.last_seen_ago != null" class="used-ago">{{ fmtAgo(p.last_seen_ago) }}</span>
-                <span v-else-if="!p.wildcard" class="used-ago">{{ t('dashboard.usedNever') }}</span>
-              </div>
+              </span>
+              <span class="used-ago">{{ p.last_seen_ago != null ? fmtAgo(p.last_seen_ago) : (p.wildcard ? '' : t('dashboard.usedNever')) }}</span>
             </div>
             <div v-if="!activeUsedParams.length" class="empty">{{ t('dashboard.usedNone') }}</div>
           </div>
@@ -540,36 +534,24 @@ onUnmounted(stopLive)
 
 /* Used parameters */
 .head-link { font-size: var(--text-xs); color: var(--text-muted); }
-.used-list { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 360px; overflow-y: auto; }
-.used-row { padding: var(--sp-2); border-radius: var(--radius-sm); }
+.used-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 2px var(--sp-4); }
+.used-row { display: flex; align-items: center; gap: var(--sp-2); padding: 5px var(--sp-2); border-radius: var(--radius-sm); min-width: 0; }
 .used-row:hover { background: var(--bg-hover); }
-.used-top { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-mono); font-size: var(--text-xs); }
-.used-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-.used-val { color: var(--text); font-variant-numeric: tabular-nums; }
+.used-path { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-family: var(--font-mono); font-size: var(--text-xs); }
+.used-val { flex-shrink: 0; min-width: 52px; font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.used-val.none { color: var(--text-muted); font-weight: 400; }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); opacity: 0.4; flex-shrink: 0; }
 .live-dot.on { background: var(--success); opacity: 1; }
-.used-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; padding-left: 14px; }
+.used-tags { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .used-tag { font-size: var(--text-2xs); padding: 1px 6px; border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-secondary); }
 .used-tag.overlimit { background: var(--warning-surface, rgba(255, 170, 0, 0.12)); color: var(--warning); }
 .used-tag.off { opacity: 0.5; text-decoration: line-through; }
 .used-off-label { font-size: var(--text-2xs); color: var(--text-muted); margin-left: var(--sp-1); }
-.used-ago { font-size: var(--text-2xs); color: var(--text-muted); margin-left: auto; }
+.used-ago { flex-shrink: 0; font-size: var(--text-2xs); color: var(--text-muted); margin-left: auto; }
 .out-val { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
 .out-val strong { color: var(--text); }
 .wave-canvas { width: 100%; height: 72px; border-radius: var(--radius-md); display: block; }
 
-/* OSC feed */
-.osc-feed { display: flex; flex-direction: column; gap: 2px; }
-.osc-row {
-  display: flex; gap: var(--sp-3); align-items: center;
-  padding: 6px var(--sp-2); border-radius: var(--radius-sm);
-  font-size: var(--text-xs); font-family: var(--font-mono);
-}
-.osc-row:hover { background: var(--bg-hover); }
-.osc-path { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.osc-mode { color: var(--text-muted); }
-.osc-val { color: var(--text); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
-.osc-time { color: var(--text-muted); min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* QR */
 .qr-tabs { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }

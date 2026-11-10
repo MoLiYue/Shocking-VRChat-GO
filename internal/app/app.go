@@ -70,6 +70,8 @@ type App struct {
 	play *player
 
 	chatbox *chatboxSender
+	monitor *paramMonitor
+	monStop chan struct{}
 
 	upd *updater
 
@@ -113,6 +115,8 @@ func New(baseDir string) *App {
 	a.V4 = device.NewV4Relay(a.Hub, func() bool { return config.Bool(a.Cfg.Get("ws", "v4_enabled"), true) })
 	a.Engine = &Engine{a: a}
 	a.chatbox = &chatboxSender{a: a}
+	a.monitor = newParamMonitor(a)
+	a.monStop = make(chan struct{})
 	a.Hub.WaveObserver = a.recordWave
 	a.Hub.ClearObserver = a.waves.clear
 	logx.SetObserver(func(e logx.Entry) { a.Live.Broadcast("log", e) })
@@ -140,6 +144,8 @@ func (a *App) Init() error {
 	a.refreshLimits()
 	a.loadCurves()
 	a.loadOverlimitRules()
+	a.monitor.load()
+	go a.monitor.saveLoop(a.monStop)
 	logx.Success("[init] Config loaded. WS needs external access - allow firewall prompt if shown.")
 	return nil
 }
@@ -240,6 +246,10 @@ func (a *App) Shutdown() {
 		logx.Info("[shutdown] Graceful shutdown initiated...")
 		a.chatbox.stop()
 		a.Engine.Stop(false)
+		close(a.monStop)
+		if err := a.monitor.save(); err != nil {
+			logx.Warn("[monitor] Save failed: %v", err)
+		}
 		a.Hub.CloseAll()
 		if a.OnShutdown != nil {
 			a.OnShutdown()

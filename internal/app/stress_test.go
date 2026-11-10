@@ -38,6 +38,7 @@ func TestStressDevicesAndOSC(t *testing.T) {
 			sc := config.Sub(adv, true, "dglab3", ch, "mode_config", "shock")
 			sc["follow_value"] = true
 		}
+		config.Sub(adv, true, "monitor")["enabled"] = true
 		config.SyncBasicIntoAdvanced(adv, basic)
 	})
 	_ = e.a.Cfg.Save()
@@ -66,6 +67,9 @@ func TestStressDevicesAndOSC(t *testing.T) {
 	conn, _ := net.Dial("udp", "127.0.0.1:"+strconv.Itoa(e.oscPort))
 	run(func() {
 		addr := fmt.Sprintf("/avatar/parameters/s%d_%d", rand.Intn(2), rand.Intn(6))
+		if rand.Intn(4) == 0 { // exercised by the parameter monitor
+			addr = fmt.Sprintf("/avatar/parameters/pcs/contact/p%d", rand.Intn(5))
+		}
 		b, _ := osc.Encode(addr, float32(rand.Float64()))
 		_, _ = conn.Write(b)
 		time.Sleep(200 * time.Microsecond)
@@ -133,7 +137,7 @@ func TestStressDevicesAndOSC(t *testing.T) {
 	// API churn
 	paths := []string{"/api/v1/status", "/api/v1/strength/A/set/30", "/api/v1/strength/all/add/5", "/api/v1/strength/B/sub/3",
 		"/api/v1/overlimit_rules", "/api/v1/sendwave/A/2/0A0A0A0A64646464", "/api/v1/shock/all/1", "/api/v1/strength_boost/all/10/1",
-		"/api/v1/mode_config/a/shock", "/api/v1/logs"}
+		"/api/v1/mode_config/a/shock", "/api/v1/logs", "/api/v1/monitor", "/api/v1/monitor/changes"}
 	run(func() {
 		p := paths[rand.Intn(len(paths))]
 		resp, err := httpClient.Get(e.web.URL + p)

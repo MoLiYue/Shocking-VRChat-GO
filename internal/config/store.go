@@ -149,6 +149,12 @@ func DefaultAdvanced() M {
 			"trigger_sfx":       false,
 			"message_template":  "Shocking VRChat ⚡ A:{strength_a} B:{strength_b}",
 		},
+		// Parameter monitor: records which parameters appeared and how
+		// they changed (see internal/app/monitor.go).
+		"monitor": M{
+			"enabled":  false, // opt-in (Settings page)
+			"prefixes": []any{"/avatar/parameters/pcs/", "/avatar/parameters/OGB/"},
+		},
 		"sps": M{
 			"enabled":               true,
 			"ogb_enabled_heartbeat": true,

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vu
 import { useRouter } from 'vue-router'
 import {
   LayoutDashboard, SlidersHorizontal, Plug, Gauge, ShieldAlert, Gamepad2, Zap, Ruler, Hand,
-  Shuffle, FlaskConical, ScrollText, Disc, MessageSquare, Settings, Languages, Power,
+  Shuffle, FlaskConical, ScrollText, Disc, Activity, MessageSquare, Settings, Languages, Power,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Sun, Moon,
 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
@@ -57,6 +57,7 @@ const navItems = computed<NavItem[]>(() => [
   { path: '/wave-test', label: t('nav.waveTest'), icon: FlaskConical },
   { path: '/logs', label: t('nav.logs'), icon: ScrollText },
   { path: '/recorder', label: t('nav.recorder'), icon: Disc },
+  { path: '/monitor', label: t('nav.monitor'), icon: Activity },
   { path: '/chatbox', label: t('nav.chatbox'), icon: MessageSquare },
   { path: '/settings', label: t('nav.settings'), icon: Settings },
 ])

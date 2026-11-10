@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1110,5 +1111,122 @@ func TestRangesParamEndToEnd(t *testing.T) {
 	got2 := app.waitFor(func(v map[string]string) bool { return strings.HasPrefix(v["message"], "pulse-A:") }, 2*time.Second)
 	if got2 == nil {
 		t.Fatal("no pulse")
+	}
+}
+
+// The parameter monitor records PCS/OGB parameters (not others) with a
+// timestamped change history, survives a restart and can be filtered.
+func TestParamMonitor(t *testing.T) {
+	e := newEnv(t)
+	m := e.a.monitor
+	m.record("/avatar/parameters/pcs/contact/enterPass", []any{0.1})
+	if len(m.entries) != 0 {
+		t.Fatal("monitor must be off by default")
+	}
+	e.postJSON(t, "/api/v1/settings", map[string]any{"monitor_enabled": true})
+	m.mu.Lock()
+	m.prefixChecked = time.Time{}
+	m.mu.Unlock()
+	m.record("/avatar/parameters/pcs/contact/enterPass", []any{0.1})
+	m.record("/avatar/parameters/pcs/contact/enterPass", []any{0.1}) // same value: no new point
+	m.record("/avatar/parameters/pcs/contact/enterPass", []any{0.6})
+	m.record("/avatar/parameters/OGB/Orf/Vag/PenOthers", []any{true})
+	m.record("/avatar/parameters/VelocityX", []any{1.0}) // not monitored
+	r := e.getJSON(t, "/api/v1/monitor")
+	params := config.AsList(r["params"])
+	if len(params) != 2 {
+		t.Fatalf("params %v", params)
+	}
+	var pcs map[string]any
+	for _, p := range params {
+		if pm := config.AsMap(p); pm["category"] == "pcs" {
+			pcs = pm
+		}
+	}
+	if pcs == nil || config.Int(pcs["count"], 0) != 3 || config.Int(pcs["changes"], 0) != 2 ||
+		config.Float(pcs["min"], -1) != 0.1 || config.Float(pcs["max"], -1) != 0.6 || config.Float(pcs["last_value"], -1) != 0.6 {
+		t.Fatalf("pcs entry %v", pcs)
+	}
+	if c := config.AsMap(r["categories"]); config.Int(c["ogb"], 0) != 1 {
+		t.Fatalf("categories %v", c)
+	}
+	if f := e.getJSON(t, "/api/v1/monitor?category=ogb"); len(config.AsList(f["params"])) != 1 {
+		t.Fatalf("category filter %v", f)
+	}
+	h := e.getJSON(t, "/api/v1/monitor/history?address="+url.QueryEscape("/avatar/parameters/pcs/contact/enterPass"))
+	pts := config.AsList(h["points"])
+	if len(pts) != 2 || config.Float(config.AsMap(pts[1])["v"], -1) != 0.6 || config.Float(config.AsMap(pts[0])["t"], 0) <= 0 {
+		t.Fatalf("history %v", pts)
+	}
+	if ch := config.AsList(e.getJSON(t, "/api/v1/monitor/changes")["changes"]); len(ch) != 3 {
+		t.Fatalf("changes %v", ch)
+	}
+	// persisted and reloaded
+	if err := m.save(); err != nil {
+		t.Fatal(err)
+	}
+	m2 := newParamMonitor(e.a)
+	m2.load()
+	if len(m2.entries) != 2 || len(m2.entries["/avatar/parameters/pcs/contact/enterPass"].History) != 2 {
+		t.Fatalf("reloaded %v", m2.entries)
+	}
+	// custom prefixes
+	e.postJSON(t, "/api/v1/monitor/settings", map[string]any{"prefixes": []any{"Velocity"}})
+	m.record("/avatar/parameters/VelocityX", []any{1.0})
+	if _, ok := m.entries["/avatar/parameters/VelocityX"]; !ok {
+		t.Fatal("custom prefix not applied")
+	}
+	e.postJSON(t, "/api/v1/monitor/clear", nil)
+	if len(config.AsList(e.getJSON(t, "/api/v1/monitor")["params"])) != 0 {
+		t.Fatal("clear")
+	}
+}
+
+// On /avatar/change the avatar's VRChat OSC config is read, so all its
+// PCS/OGB parameters are listed before they are first triggered.
+func TestParamMonitorAvatarImport(t *testing.T) {
+	e := newEnv(t)
+	dir := t.TempDir()
+	old := vrchatOSCDir
+	vrchatOSCDir = func() string { return dir }
+	defer func() { vrchatOSCDir = old }()
+	av := filepath.Join(dir, "usr_x", "Avatars")
+	_ = os.MkdirAll(av, 0o755)
+	cfg := "\ufeff" + `{"id":"avtr_1","name":"Mio","parameters":[
+	 {"name":"pcs/contact/enterPass","input":{"address":"/avatar/parameters/pcs/contact/enterPass","type":"Float"},"output":{"address":"/avatar/parameters/pcs/contact/enterPass","type":"Float"}},
+	 {"name":"OGB/Orf/Vag/PenOthers","output":{"address":"/avatar/parameters/OGB/Orf/Vag/PenOthers","type":"Float"}},
+	 {"name":"VelocityX","output":{"address":"/avatar/parameters/VelocityX","type":"Float"}}]}`
+	_ = os.WriteFile(filepath.Join(av, "avtr_1.json"), []byte(cfg), 0o644)
+	e.postJSON(t, "/api/v1/settings", map[string]any{"monitor_enabled": true})
+	m := e.a.monitor
+	m.mu.Lock()
+	m.prefixChecked = time.Time{}
+	m.mu.Unlock()
+	m.record("/avatar/change", []any{"avtr_1"})
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		m.mu.Lock()
+		n := len(m.entries)
+		m.mu.Unlock()
+		if n == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("imported %d entries, want 2 (pcs + OGB only)", n)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	m.mu.Lock()
+	ent := m.entries["/avatar/parameters/OGB/Orf/Vag/PenOthers"]
+	ok := ent != nil && ent.Declared && ent.Avatar == "Mio" && ent.Count == 0 && ent.Type == "float"
+	m.mu.Unlock()
+	if !ok {
+		t.Fatalf("declared entry %+v", ent)
+	}
+	m.record("/avatar/parameters/OGB/Orf/Vag/PenOthers", []any{0.4})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if ent.Count != 1 || len(ent.History) != 1 {
+		t.Fatalf("after first value %+v", ent)
 	}
 }

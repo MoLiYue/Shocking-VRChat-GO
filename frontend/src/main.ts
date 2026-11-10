@@ -16,6 +16,7 @@ const router = createRouter({
     { path: '/params', component: () => import('./views/ParamMap.vue') },
     { path: '/sps', component: () => import('./views/Sps.vue') },
     { path: '/recorder', component: () => import('./views/Recorder.vue') },
+    { path: '/monitor', component: () => import('./views/Monitor.vue') },
     { path: '/settings', component: () => import('./views/Settings.vue') },
     { path: '/strength', component: () => import('./views/StrengthLimit.vue') },
     { path: '/overlimit-rules', component: () => import('./views/OverlimitRules.vue') },

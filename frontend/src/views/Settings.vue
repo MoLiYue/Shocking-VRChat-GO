@@ -25,6 +25,7 @@ const webPort = ref(8800)
 const webHost = ref('127.0.0.1')
 const githubMirror = ref('')
 const minimizeToTray = ref(false)
+const monitorEnabled = ref(false)
 const trayAvailable = ref(false)
 const logLevel = ref('INFO')
 const msg = ref('')
@@ -36,7 +37,7 @@ const importErr = ref(false)
 // program restarts), so they keep an explicit save button. Everything else
 // is saved automatically.
 const unsaved = useUnsaved(() => ({ oscPort: oscPort.value, oscHost: oscHost.value, wsPort: wsPort.value, webPort: webPort.value, webHost: webHost.value }))
-const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value }), { save: saveAuto, delay: 800 })
+const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value, monitorEnabled: monitorEnabled.value }), { save: saveAuto, delay: 800 })
 
 async function load() {
   unsaved.markLoading()
@@ -54,6 +55,7 @@ async function load() {
   logLevel.value = adv.log_level || 'INFO'
   githubMirror.value = adv.general?.github_mirror || ''
   minimizeToTray.value = !!adv.general?.minimize_to_tray
+  monitorEnabled.value = !!adv.monitor?.enabled
   unsaved.markClean()
   autoUnsaved.markClean()
   try { trayAvailable.value = !!(await api('/api/v1/status')).tray_available } catch {}
@@ -65,6 +67,7 @@ async function saveAuto() {
     log_level: logLevel.value,
     github_mirror: githubMirror.value,
     minimize_to_tray: minimizeToTray.value,
+    monitor_enabled: monitorEnabled.value,
   })
   if (data.success) autoUnsaved.markClean()
   else { msg.value = data.message || t('common.saveFailed'); msgErr.value = true; setTimeout(() => msg.value = '', 8000) }
@@ -451,6 +454,17 @@ onUnmounted(() => { stopProgressPolling() })
             <span>{{ t('settings.minimizeToTray') }}</span>
           </label>
           <p class="hint">{{ t('settings.minimizeToTrayHint') }}</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>{{ t('settings.monitorTitle') }}</h2>
+        <div class="field">
+          <label class="toggle-row">
+            <input type="checkbox" class="switch" role="switch" v-model="monitorEnabled">
+            <span>{{ t('settings.monitorEnabled') }}</span>
+          </label>
+          <p class="hint">{{ t('settings.monitorHint') }} <router-link to="/monitor">{{ t('settings.monitorOpen') }} →</router-link></p>
         </div>
       </section>
     </div>

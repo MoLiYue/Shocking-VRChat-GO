@@ -21,7 +21,19 @@ let ws: WebSocket | null = null
 
 const LEVELS = ['all', 'debug', 'info', 'success', 'warning', 'error', 'critical']
 
+// OSC events (moved here from the dashboard): every routed parameter update.
+interface OscEvent { time: number; address: string; value: number; channel: string; mode: string }
+const oscEvents = ref<OscEvent[]>([])
+const showOsc = ref(true)
+const OSC_MAX = 200
+function shortPath(a: string) { return a.replace('/avatar/parameters/', '') }
+function fmtClock(ts: number) {
+  const d = new Date(ts * 1000)
+  return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0')
+}
+
 async function loadInitial() {
+  try { oscEvents.value = ((await api('/api/v1/osc_activity')).events || []).slice(0, OSC_MAX) } catch {}
   const data = await api('/api/v1/logs')
   logs.value = data.logs || []
   await nextTick()
@@ -35,12 +47,15 @@ function connectWs() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const sock = new WebSocket(`${proto}//${location.host}/ws/live`)
   ws = sock
-  sock.onopen = () => { sock.send(JSON.stringify({ subscribe: ['log'] })) }
+  sock.onopen = () => { sock.send(JSON.stringify({ subscribe: ['log', 'osc'] })) }
   sock.onmessage = (ev) => {
     if (ws !== sock) return // late message from a replaced socket
     try {
       const msg = JSON.parse(ev.data)
-      if (msg.topic === 'log') {
+      if (msg.topic === 'osc' && msg.event) {
+        oscEvents.value.unshift(msg.event)
+        if (oscEvents.value.length > OSC_MAX) oscEvents.value.length = OSC_MAX
+      } else if (msg.topic === 'log') {
         logs.value.push({ text: msg.text, level: msg.level, time: msg.time })
         if (logs.value.length > 2000) logs.value = logs.value.slice(-1500)
         if (autoScroll.value) {
@@ -108,6 +123,21 @@ onUnmounted(stopWs)
         <button class="btn btn-ghost btn-sm" @click="clearLogs">{{ t('logs.clear') }}</button>
       </div>
     </div>
+    <section class="osc-panel">
+      <button class="osc-head" :aria-expanded="showOsc" @click="showOsc = !showOsc">
+        {{ showOsc ? '▾' : '▸' }} {{ t('dashboard.oscEvents') }} <span class="osc-count">{{ oscEvents.length }}</span>
+      </button>
+      <div v-if="showOsc" class="osc-feed">
+        <div class="osc-row" v-for="(e, i) in oscEvents" :key="i">
+          <span class="osc-time">{{ fmtClock(e.time) }}</span>
+          <span class="ch-tag sm" :class="'ch-' + e.channel.toLowerCase()">{{ e.channel }}</span>
+          <span class="osc-path" :title="e.address">{{ shortPath(e.address) }}</span>
+          <span class="osc-mode">{{ e.mode }}</span>
+          <span class="osc-val">{{ e.value }}</span>
+        </div>
+        <div v-if="!oscEvents.length" class="log-empty">{{ t('dashboard.noEvents') }}</div>
+      </div>
+    </section>
     <div ref="logAreaRef" class="log-area">
       <div
         v-for="(entry, i) in filteredLogs()"
@@ -156,4 +186,13 @@ onUnmounted(stopWs)
 .log-error { color: var(--danger); }
 .log-critical { color: var(--danger); font-weight: 700; background: var(--danger-surface); }
 
+.osc-panel { margin-bottom: var(--sp-3); }
+.osc-head { background: none; border: none; padding: 0 0 var(--sp-1); color: var(--text-label); font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.osc-count { font-weight: 400; color: var(--text-muted); font-size: var(--text-xs); margin-left: 4px; }
+.osc-feed { max-height: 200px; overflow-y: auto; background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--sp-1) var(--sp-2); }
+.osc-row { display: flex; gap: var(--sp-3); align-items: center; padding: 2px 0; font-size: var(--text-xs); font-family: var(--font-mono); }
+.osc-time { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.osc-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.osc-mode { color: var(--text-muted); }
+.osc-val { min-width: 56px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
 </style>

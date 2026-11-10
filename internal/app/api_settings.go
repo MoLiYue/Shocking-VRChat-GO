@@ -69,6 +69,9 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 		if v, ok := data["log_level"]; ok {
 			adv["log_level"] = v
 		}
+		if v, ok := data["monitor_enabled"]; ok {
+			config.Sub(adv, true, "monitor")["enabled"] = config.Bool(v, false)
+		}
 		if v, ok := data["minimize_to_tray"]; ok {
 			config.Sub(adv, true, "general")["minimize_to_tray"] = config.Bool(v, false)
 		}

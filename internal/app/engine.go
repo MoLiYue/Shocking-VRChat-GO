@@ -344,6 +344,7 @@ func (a *App) oscGlobalHook(addr string, args []any) {
 		a.trackOGBZone(addr)
 	}
 	a.rec.record(addr, args)
+	a.monitor.record(addr, args)
 }
 
 func (a *App) commandQueueProcessor(ctx context.Context) {
