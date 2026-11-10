@@ -22,6 +22,7 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 	}
 	restart := map[string]bool{}
 	var bad error
+	applyFwd := false
 	toInt := func(v any) int {
 		i, ok := config.ToInt(v)
 		if !ok {
@@ -48,6 +49,30 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 			}
 			if v, ok := o["listen_host"]; ok {
 				set("osc", "listen_host", v, "osc")
+			}
+			if l, ok := o["forward"]; ok { // OSC router targets, applied live
+				var fwd []any
+				for _, f := range config.AsList(l) {
+					m := config.AsMap(f)
+					if m == nil {
+						continue
+					}
+					p, ok := config.ToInt(m["port"])
+					if !ok || p < 1 || p > 65535 {
+						bad = httpErr(400, "forward port out of range")
+						return
+					}
+					h := strings.TrimSpace(config.Str(m["host"], "127.0.0.1"))
+					if h == "" {
+						h = "127.0.0.1"
+					}
+					fwd = append(fwd, config.M{"host": h, "port": p, "enabled": config.Bool(m["enabled"], true)})
+				}
+				if fwd == nil {
+					fwd = []any{}
+				}
+				config.Sub(adv, true, "osc")["forward"] = fwd
+				applyFwd = true
 			}
 			if o["send_host"] != nil || o["send_port"] != nil { // no restart needed
 				if err := a.setOSCSendTarget(adv, o["send_host"], o["send_port"]); err != nil {
@@ -90,6 +115,11 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 	if _, ok := data["log_level"]; ok {
 		a.applyLogLevel()
 	}
+	defer func() {
+		if applyFwd && bad == nil {
+			a.applyForward(nil)
+		}
+	}()
 	if _, ok := data["github_mirror"]; ok {
 		a.upd.clearCache()
 	}
@@ -127,8 +157,18 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 	return map[string]any{"success": true, "restart_needed": list, "message": msg}, nil
 }
 
+// redactSecrets removes secrets (Pulsoid token) from a config copy that is
+// returned to the UI or exported.
+func redactSecrets(adv config.M) config.M {
+	if p := config.AsMap(adv["pulsoid"]); p != nil {
+		p["token"] = ""
+	}
+	return adv
+}
+
 func (a *App) apiConfigExport(*http.Request) (any, error) {
 	adv, basic := a.Cfg.Snapshot()
+	redactSecrets(adv)
 	data := map[string]any{
 		"version":     config.FileVersion,
 		"exported_at": time.Now().Format("2006-01-02T15:04:05.000000"),
@@ -195,6 +235,8 @@ func (a *App) apiConfigImport(r *http.Request) (any, error) {
 		}
 	}
 	config.Sub(newAdv, true, "ws")["master_uuid"] = a.Cfg.Get("ws", "master_uuid")
+	// secrets are never exported, so keep ours
+	config.Sub(newAdv, true, "pulsoid")["token"] = a.Cfg.Get("pulsoid", "token")
 	newAdv["version"] = config.FileVersion
 	newBasic["version"] = config.FileVersion
 	for _, ch := range config.Channels {

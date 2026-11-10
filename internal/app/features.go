@@ -641,6 +641,9 @@ func (a *App) apiProfileLoad(r *http.Request) (any, error) {
 		config.NormalizeAvatarParams(ac)
 	}
 	config.Sub(adv, true, "ws")["master_uuid"] = a.Cfg.Get("ws", "master_uuid")
+	if config.Str(config.Get(adv, "pulsoid", "token"), "") == "" { // older profiles have none
+		config.Sub(adv, true, "pulsoid")["token"] = a.Cfg.Get("pulsoid", "token")
+	}
 	a.applySettings(adv, basic)
 	if err := a.Cfg.Save(); err != nil {
 		return nil, httpErr(500, "%v", err)

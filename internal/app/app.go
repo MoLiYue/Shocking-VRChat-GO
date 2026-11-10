@@ -73,6 +73,7 @@ type App struct {
 
 	chatbox *chatboxSender
 	monitor *paramMonitor
+	pulsoid pulsoidState
 	// avatarID is the last /avatar/change id (for share cards).
 	avatarID atomic.Value
 	monStop  chan struct{}
@@ -281,6 +282,7 @@ func (a *App) Shutdown() {
 	a.shutdownOnce.Do(func() {
 		logx.Info("[shutdown] Graceful shutdown initiated...")
 		a.chatbox.stop()
+		a.stopPulsoid()
 		a.Engine.Stop(false)
 		close(a.monStop)
 		if err := a.monitor.save(); err != nil {

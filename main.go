@@ -151,6 +151,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	go a.HotReloadLoop(ctx)
 	a.StartChatboxIfEnabled()
+	a.StartPulsoidIfEnabled()
+	go a.ApplySteamVRAutostart()
 
 	countEnabled := func(ch string) int {
 		n := 0

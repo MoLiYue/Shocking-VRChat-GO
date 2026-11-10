@@ -194,6 +194,10 @@ func (a *App) Handler() http.Handler {
 	h("GET /api/v1/monitor/export", a.apiMonitorExport)
 	h("POST /api/v1/monitor/settings", a.apiMonitorSettings)
 	h("POST /api/v1/monitor/clear", a.apiMonitorClear)
+	h("GET /api/v1/steamvr", a.apiSteamVRGet)
+	h("POST /api/v1/steamvr", a.apiSteamVRSet)
+	h("GET /api/v1/pulsoid", a.apiPulsoidGet)
+	h("POST /api/v1/pulsoid", a.apiPulsoidSet)
 	h("GET /api/v1/share/data", a.apiShareData)
 	h("GET /api/v1/share/code", a.apiShareCode)
 	h("POST /api/v1/share/png", a.apiSharePNG)
@@ -216,7 +220,7 @@ func (a *App) Handler() http.Handler {
 	// settings
 	h("GET /api/v1/config", func(*http.Request) (any, error) {
 		adv, basic := a.Cfg.Snapshot()
-		return map[string]any{"basic": basic, "advanced": config.StripBasic(adv)}, nil
+		return map[string]any{"basic": basic, "advanced": config.StripBasic(redactSecrets(adv))}, nil
 	})
 	h("POST /api/v1/settings", a.apiSettings)
 	h("GET /api/v1/config/export", a.apiConfigExport)

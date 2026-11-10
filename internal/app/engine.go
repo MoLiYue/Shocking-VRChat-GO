@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -189,6 +192,7 @@ func (e *Engine) start() {
 		return
 	}
 	logx.Success("[engine] OSC Listening: %s:%d", host, port)
+	a.applyForward(srv)
 
 	loops := []func(context.Context){
 		a.commandQueueProcessor, a.strengthBoostChecker, a.waveTestLoop,
@@ -637,7 +641,11 @@ func (a *App) applySettings(adv, basic config.M) {
 		logx.Warn("[hot-reload] web_server config changed. Full program restart required to apply.")
 		adv["web_server"] = oldAdv["web_server"]
 	}
+	pulsoidChanged := !config.Equal(adv["pulsoid"], oldAdv["pulsoid"])
 	a.Cfg.Replace(adv, basic)
+	if pulsoidChanged {
+		go a.StartPulsoidIfEnabled()
+	}
 	a.refreshServerIP()
 	a.applyLogLevel()
 	a.refreshAllowedHosts()
@@ -661,4 +669,69 @@ func (a *App) applySettings(adv, basic config.M) {
 		go a.Engine.Reconfigure()
 	}
 	logx.Success("[hot-reload] Configuration reloaded.")
+}
+
+// ---------------------------------------------------------------- OSC router
+
+// forwardTargets returns the enabled, valid forward targets (never our own
+// listen port, which would loop).
+func (a *App) forwardTargets() []string {
+	ownPort := config.Int(a.Cfg.Get("osc", "listen_port"), 9001)
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range config.AsList(a.Cfg.Get("osc", "forward")) {
+		m := config.AsMap(f)
+		if m == nil || !config.Bool(m["enabled"], true) {
+			continue
+		}
+		host := strings.TrimSpace(config.Str(m["host"], "127.0.0.1"))
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		port := config.Int(m["port"], 0)
+		if port < 1 || port > 65535 {
+			continue
+		}
+		if port == ownPort && (host == "127.0.0.1" || host == "localhost" || host == "0.0.0.0") {
+			logx.Warn("[osc] Forward to %s:%d skipped: that is our own listen port", host, port)
+			continue
+		}
+		t := net.JoinHostPort(host, strconv.Itoa(port))
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// applyForward (re)opens the forward sockets of srv (nil = current server).
+func (a *App) applyForward(srv *osc.Server) {
+	if srv == nil {
+		a.Engine.stateMu.Lock()
+		srv = a.Engine.oscSrv
+		a.Engine.stateMu.Unlock()
+		if srv == nil {
+			return
+		}
+	}
+	var conns []*net.UDPConn
+	targets := a.forwardTargets()
+	for _, t := range targets {
+		addr, err := net.ResolveUDPAddr("udp", t)
+		if err != nil {
+			logx.Warn("[osc] Forward target %s: %v", t, err)
+			continue
+		}
+		c, err := net.DialUDP("udp", nil, addr)
+		if err != nil {
+			logx.Warn("[osc] Forward target %s: %v", t, err)
+			continue
+		}
+		conns = append(conns, c)
+	}
+	srv.SetForward(conns)
+	if len(conns) > 0 {
+		logx.Info("[osc] Forwarding incoming OSC to %s", strings.Join(targets, ", "))
+	}
 }

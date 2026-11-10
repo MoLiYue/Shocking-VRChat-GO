@@ -116,6 +116,10 @@ func DefaultAdvanced() M {
 			"listen_host": "127.0.0.1",
 			"listen_port": 9001,
 
+			// OSC router: forward everything VRChat sends us to other apps
+			// ([{host, port, enabled}]), so they keep working although only
+			// one program can listen on VRChat's output port.
+			"forward": []any{},
 			// Where we send OSC to VRChat (chatbox, OGB heartbeat).
 			"send_host": "127.0.0.1",
 			"send_port": 9000,
@@ -150,6 +154,14 @@ func DefaultAdvanced() M {
 			"send_notification": true,
 			"trigger_sfx":       false,
 			"message_template":  "Shocking VRChat ⚡ A:{strength_a} B:{strength_b}",
+		},
+		// Optional Pulsoid heart rate (see internal/app/pulsoid.go).
+		"pulsoid": M{
+			"enabled":        false,
+			"token":          "",
+			"min_bpm":        40.0,
+			"max_bpm":        200.0,
+			"send_to_vrchat": true,
 		},
 		// Parameter monitor: records which parameters appeared and how
 		// they changed (see internal/app/monitor.go).
