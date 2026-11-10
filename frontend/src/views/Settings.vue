@@ -3,6 +3,7 @@ import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { openShareExport, shareState } from '@/share'
 import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
+import PulsoidSettings from '@/components/PulsoidSettings.vue'
 import { themePref, setTheme, type ThemePref } from '@/theme'
 import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
@@ -22,6 +23,22 @@ const oscPort = ref(9001)
 const oscHost = ref('127.0.0.1')
 const oscSendHost = ref('127.0.0.1')
 const oscSendPort = ref(9000)
+// OSC router: forward everything VRChat sends us to other programs
+interface Fwd { host: string; port: number; enabled: boolean }
+const oscForward = ref<Fwd[]>([])
+function addForward() { oscForward.value.push({ host: '127.0.0.1', port: 9002, enabled: true }) }
+// SteamVR autostart (applied immediately by its own endpoint)
+const steamvr = ref<{ supported?: boolean; enabled?: boolean; registered?: boolean; autolaunch?: boolean }>({})
+const steamvrBusy = ref(false)
+async function loadSteamVR() { try { steamvr.value = await api('/api/v1/steamvr') } catch {} }
+async function toggleSteamVR(e: Event) {
+  const on = (e.target as HTMLInputElement).checked
+  steamvrBusy.value = true
+  try {
+    const r = await apiPost('/api/v1/steamvr', { enabled: on })
+    if (r.detail) { msg.value = r.detail; msgErr.value = true } else steamvr.value = r
+  } finally { steamvrBusy.value = false; loadSteamVR() }
+}
 const wsPort = ref(28846)
 const v4Enabled = ref(true)
 const webPort = ref(8800)
@@ -40,7 +57,7 @@ const importErr = ref(false)
 // program restarts), so they keep an explicit save button. Everything else
 // is saved automatically.
 const unsaved = useUnsaved(() => ({ oscPort: oscPort.value, oscHost: oscHost.value, wsPort: wsPort.value, webPort: webPort.value, webHost: webHost.value }))
-const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, oscSendHost: oscSendHost.value, oscSendPort: oscSendPort.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value, monitorEnabled: monitorEnabled.value }), { save: saveAuto, delay: 800 })
+const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, oscSendHost: oscSendHost.value, oscSendPort: oscSendPort.value, oscForward: oscForward.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value, monitorEnabled: monitorEnabled.value }), { save: saveAuto, delay: 800 })
 
 async function load() {
   unsaved.markLoading()
@@ -51,6 +68,7 @@ async function load() {
   oscHost.value = adv.osc?.listen_host || '127.0.0.1'
   oscSendHost.value = adv.osc?.send_host || '127.0.0.1'
   oscSendPort.value = adv.osc?.send_port || 9000
+  oscForward.value = (adv.osc?.forward || []).map((f: any) => ({ host: f.host || '127.0.0.1', port: f.port, enabled: f.enabled !== false }))
   wsPort.value = adv.ws?.listen_port || 28846
   v4Enabled.value = adv.ws?.v4_enabled !== false
   webPort.value = adv.web_server?.listen_port || 8800
@@ -69,7 +87,7 @@ async function load() {
 async function saveAuto() {
   const data = await apiPost('/api/v1/settings', {
     ws: { v4_enabled: v4Enabled.value },
-    osc: { send_host: oscSendHost.value, send_port: oscSendPort.value },
+    osc: { send_host: oscSendHost.value, send_port: oscSendPort.value, forward: oscForward.value },
     log_level: logLevel.value,
     github_mirror: githubMirror.value,
     minimize_to_tray: minimizeToTray.value,
@@ -156,6 +174,7 @@ async function handleImport(e: Event) {
 }
 
 onMounted(load)
+onMounted(loadSteamVR)
 
 // --- Update check ---
 const updateInfo = ref<any>(null)
@@ -399,6 +418,18 @@ onUnmounted(() => { stopProgressPolling() })
           </div>
           <p class="hint">{{ t('settings.oscSendTargetHint') }}</p>
         </div>
+        <div class="field">
+          <label>{{ t('settings.oscForward') }}</label>
+          <div v-for="(f, i) in oscForward" :key="i" class="target-row fwd-row">
+            <input type="checkbox" v-model="f.enabled" :aria-label="t('common.enable')">
+            <input type="text" v-model="f.host" class="host" :aria-label="t('settings.oscSendHost')">
+            <span>:</span>
+            <input type="number" v-model.number="f.port" min="1" max="65535" class="port" :aria-label="t('settings.oscSendPort')">
+            <button class="icon-action danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click="oscForward.splice(i, 1)">×</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" @click="addForward">+ {{ t('settings.oscForwardAdd') }}</button>
+          <p class="hint">{{ t('settings.oscForwardHint', { port: oscPort }) }}</p>
+        </div>
       </section>
 
       <section class="card">
@@ -471,16 +502,27 @@ onUnmounted(() => { stopProgressPolling() })
         </div>
       </section>
 
-      <section v-if="trayAvailable" class="card">
+      <section v-if="trayAvailable || steamvr.supported" class="card">
         <h2>{{ t('settings.windowTitle') }}</h2>
-        <div class="field">
+        <div v-if="trayAvailable" class="field">
           <label class="toggle-row">
             <input type="checkbox" class="switch" role="switch" v-model="minimizeToTray">
             <span>{{ t('settings.minimizeToTray') }}</span>
           </label>
           <p class="hint">{{ t('settings.minimizeToTrayHint') }}</p>
         </div>
+        <div v-if="steamvr.supported" class="field">
+          <label class="toggle-row">
+            <input type="checkbox" class="switch" role="switch" :checked="!!steamvr.enabled" :disabled="steamvrBusy" @change="toggleSteamVR">
+            <span>{{ t('settings.steamvrAutostart') }}</span>
+          </label>
+          <p class="hint">{{ t('settings.steamvrHint') }}
+            <span v-if="steamvr.enabled && !(steamvr.registered && steamvr.autolaunch)" class="warn">{{ t('settings.steamvrNotApplied') }}</span>
+          </p>
+        </div>
       </section>
+
+      <PulsoidSettings />
 
       <section class="card">
         <h2>{{ t('settings.monitorTitle') }}</h2>
@@ -657,6 +699,8 @@ onUnmounted(() => { stopProgressPolling() })
 </template>
 
 <style scoped>
+.fwd-row { margin-bottom: var(--sp-2); }
+.warn { color: var(--warning); }
 .target-row { display: flex; align-items: center; gap: var(--sp-2); }
 .target-row .host { flex: 1; min-width: 0; }
 .target-row .port { width: 96px; }

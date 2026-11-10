@@ -236,7 +236,7 @@ onUnmounted(() => clearInterval(effTimer))
           <div class="condition-row">
             <span class="cond-label">{{ t('overlimit.when') }}</span>
             <input type="text" v-model="rule.condition.param" class="cond-param" placeholder="/avatar/parameters/...">
-            <AppSelect v-model="rule.condition.operator" class="cond-op" :options="[...operators.map((op) => ({ value: op, label: op })), ...CHANGE_OPS.map((op) => ({ value: op, label: t('overlimit.op_' + op) }))]" />
+            <AppSelect v-model="rule.condition.operator" small class="cond-op" :options="[...operators.map((op) => ({ value: op, label: op })), ...CHANGE_OPS.map((op) => ({ value: op, label: t('overlimit.op_' + op) }))]" />
             <input type="number" v-model.number="rule.condition.value" class="cond-value" step="0.01" min="0"
               :title="isChangeOp(rule.condition.operator) ? t('overlimit.minChange') : ''"
               :aria-label="isChangeOp(rule.condition.operator) ? t('overlimit.minChange') : t('overlimit.condValue')">
@@ -244,10 +244,10 @@ onUnmounted(() => clearInterval(effTimer))
           <p v-if="isChangeOp(rule.condition.operator)" class="change-hint">{{ t('overlimit.changeHint') }}</p>
           <div class="effect-row">
             <span class="cond-label">{{ t('overlimit.then') }}</span>
-            <AppSelect v-model="rule.channel" class="effect-channel" :options="[{ value: 'a', label: t('overlimit.channelAOption') }, { value: 'b', label: t('overlimit.channelBOption') }, { value: 'both', label: t('overlimit.channelBothOption') }]" />
+            <AppSelect v-model="rule.channel" small class="effect-channel" :options="[{ value: 'a', label: t('overlimit.channelAOption') }, { value: 'b', label: t('overlimit.channelBOption') }, { value: 'both', label: t('overlimit.channelBothOption') }]" />
             <span class="effect-text">{{ t('overlimit.limitBoostBy') }}</span>
             <input type="number" v-model.number="rule.limit_boost" min="0" :max="rule.boost_unit === 'percent' ? 1000 : 200" class="effect-value" :aria-label="t('overlimit.limitBoostBy')">
-            <AppSelect :model-value="rule.boost_unit || 'value'" @update:model-value="(u: 'value' | 'percent') => rule.boost_unit = u" class="unit-select"
+            <AppSelect :model-value="rule.boost_unit || 'value'" @update:model-value="(u: 'value' | 'percent') => rule.boost_unit = u" small class="unit-select"
               :options="[{ value: 'value', label: t('overlimit.unitValue') }, { value: 'percent', label: t('overlimit.unitPercent') }]" />
             <span v-if="rule.boost_unit === 'percent'" class="effect-text pct-preview" :title="t('overlimit.percentHint')">≈ {{ percentPreview(rule) }}</span>
           </div>
@@ -260,7 +260,7 @@ onUnmounted(() => clearInterval(effTimer))
           <div v-if="rule.decay_seconds > 0" class="effect-row curve-row">
             <span class="cond-label"></span>
             <span class="effect-text">{{ t('overlimit.curveLabel') }}</span>
-            <AppSelect :model-value="curveKind(rule)" @update:model-value="(k: string) => setCurveKind(rule, k)" class="curve-select"
+            <AppSelect :model-value="curveKind(rule)" @update:model-value="(k: string) => setCurveKind(rule, k)" small class="curve-select"
               :options="[...CURVE_NAMES.map(n => ({ value: n, label: t('overlimit.curve_' + n) })), { value: 'custom', label: t('overlimit.curve_custom') }]" />
             <svg class="curve-preview" :viewBox="`0 0 ${PREVIEW_W} ${PREVIEW_H}`" :width="PREVIEW_W" :height="PREVIEW_H" role="img"
               :aria-label="t('overlimit.curvePreview')">
@@ -313,6 +313,10 @@ onUnmounted(() => clearInterval(effTimer))
 </template>
 
 <style scoped>
+/* compact controls: inputs as tall as the small selects (30px) */
+.rule-card input[type="text"], .rule-card input[type="number"] {
+  min-height: 30px; padding: 4px var(--sp-2); font-size: var(--text-sm); border-radius: var(--radius-sm);
+}
 .foot { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
 .status-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); padding: var(--sp-3) var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .status-label { font-size: var(--text-sm); color: var(--text-muted); }
