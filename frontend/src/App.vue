@@ -49,7 +49,6 @@ const navItems = computed<NavItem[]>(() => [
   { path: '/params', label: t('nav.setup'), icon: SlidersHorizontal },
   { path: '/sps', label: t('nav.sps'), icon: Plug },
   { path: '/chatbox', label: t('nav.chatbox'), icon: MessageSquare },
-  { path: '/modules', label: t('nav.modules'), icon: Puzzle },
   {
     key: MODES_GROUP_KEY, label: t('nav.modes'), icon: Gamepad2,
     children: [
@@ -68,6 +67,7 @@ const navItems = computed<NavItem[]>(() => [
       { path: '/monitor', label: t('nav.monitor'), icon: Activity },
     ],
   },
+  { path: '/modules', label: t('nav.modules'), icon: Puzzle },
   { path: '/logs', label: t('nav.logs'), icon: ScrollText },
   { path: '/settings', label: t('nav.settings'), icon: Settings },
 ])
