@@ -1230,3 +1230,60 @@ func TestParamMonitorAvatarImport(t *testing.T) {
 		t.Fatalf("after first value %+v", ent)
 	}
 }
+
+// A manual check (force=1) bypasses the 5-minute cache, so a release
+// published after the app started shows up without restarting.
+func TestUpdateCheckForceBypassesCache(t *testing.T) {
+	tag := "v0.0.1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": tag, "assets": []any{}})
+	}))
+	defer srv.Close()
+	oldAPI := githubAPIBase
+	githubAPIBase = srv.URL
+	defer func() { githubAPIBase = oldAPI }()
+	e := newEnv(t)
+	if r := e.getJSON(t, "/api/v1/update/check"); r["latest"] != "0.0.1" || r["update_available"] != false || r["checked_at"] == nil {
+		t.Fatalf("first check %v", r)
+	}
+	tag = "v99.0.0" // a new release is published
+	if r := e.getJSON(t, "/api/v1/update/check"); r["latest"] != "0.0.1" {
+		t.Fatalf("automatic check should use the cache: %v", r)
+	}
+	if r := e.getJSON(t, "/api/v1/update/check?force=1"); r["latest"] != "99.0.0" || r["update_available"] != true {
+		t.Fatalf("forced check %v", r)
+	}
+}
+
+// Chatbox and the OGB heartbeat send to the shared target from Settings.
+func TestSharedOSCSendTarget(t *testing.T) {
+	e := newEnv(t)
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
+	port := pc.LocalAddr().(*net.UDPAddr).Port
+	if r := e.postJSON(t, "/api/v1/settings", map[string]any{"osc": map[string]any{"send_host": "127.0.0.1", "send_port": port}}); r["success"] != true || len(config.AsList(r["restart_needed"])) != 0 {
+		t.Fatalf("settings: %v", r)
+	}
+	if r := e.postJSON(t, "/api/v1/settings", map[string]any{"osc": map[string]any{"send_port": 70000}}); r["_status"] != 400 {
+		t.Fatalf("bad port accepted: %v", r)
+	}
+	if g := e.getJSON(t, "/api/v1/chatbox"); config.Int(g["target_port"], 0) != port {
+		t.Fatalf("chatbox shows %v", g["target_port"])
+	}
+	if s := e.getJSON(t, "/api/v1/sps"); config.Int(config.Get(s, "sps", "ogb_target_port"), 0) != port {
+		t.Fatalf("sps shows %v", config.Get(s, "sps", "ogb_target_port"))
+	}
+	e.postJSON(t, "/api/v1/chatbox/test", map[string]any{"message": "hi"})
+	buf := make([]byte, 1024)
+	_ = pc.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _, err := pc.ReadFrom(buf)
+	if err != nil {
+		t.Fatalf("nothing received on the shared target: %v", err)
+	}
+	if msgs, _ := osc.Parse(buf[:n]); len(msgs) != 1 || msgs[0].Address != "/chatbox/input" {
+		t.Fatalf("got %v", msgs)
+	}
+}

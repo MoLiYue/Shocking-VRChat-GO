@@ -6,7 +6,7 @@ import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { themePref, setTheme, type ThemePref } from '@/theme'
 import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 import { useTour } from '@/tour/useTour'
@@ -20,6 +20,8 @@ function replayTour() {
 
 const oscPort = ref(9001)
 const oscHost = ref('127.0.0.1')
+const oscSendHost = ref('127.0.0.1')
+const oscSendPort = ref(9000)
 const wsPort = ref(28846)
 const v4Enabled = ref(true)
 const webPort = ref(8800)
@@ -38,7 +40,7 @@ const importErr = ref(false)
 // program restarts), so they keep an explicit save button. Everything else
 // is saved automatically.
 const unsaved = useUnsaved(() => ({ oscPort: oscPort.value, oscHost: oscHost.value, wsPort: wsPort.value, webPort: webPort.value, webHost: webHost.value }))
-const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value, monitorEnabled: monitorEnabled.value }), { save: saveAuto, delay: 800 })
+const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, oscSendHost: oscSendHost.value, oscSendPort: oscSendPort.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value, monitorEnabled: monitorEnabled.value }), { save: saveAuto, delay: 800 })
 
 async function load() {
   unsaved.markLoading()
@@ -47,6 +49,8 @@ async function load() {
   const adv = data.advanced || {}
   oscPort.value = adv.osc?.listen_port || 9001
   oscHost.value = adv.osc?.listen_host || '127.0.0.1'
+  oscSendHost.value = adv.osc?.send_host || '127.0.0.1'
+  oscSendPort.value = adv.osc?.send_port || 9000
   wsPort.value = adv.ws?.listen_port || 28846
   v4Enabled.value = adv.ws?.v4_enabled !== false
   webPort.value = adv.web_server?.listen_port || 8800
@@ -65,6 +69,7 @@ async function load() {
 async function saveAuto() {
   const data = await apiPost('/api/v1/settings', {
     ws: { v4_enabled: v4Enabled.value },
+    osc: { send_host: oscSendHost.value, send_port: oscSendPort.value },
     log_level: logLevel.value,
     github_mirror: githubMirror.value,
     minimize_to_tray: minimizeToTray.value,
@@ -203,15 +208,23 @@ function friendlyUpdateError(raw: string): string {
   return s || t('settings.updateFailed')
 }
 
-async function checkUpdate() {
+/** manual: the user clicked "check" - bypass the server cache and always
+ *  report the outcome (an unchanged result used to look like no reaction). */
+async function checkUpdate(manual = false) {
   updateChecking.value = true
   updateMsg.value = ''
+  updateErr.value = false
   try {
-    const data = await api('/api/v1/update/check')
+    const data = await api('/api/v1/update/check' + (manual ? '?force=1' : ''))
     updateInfo.value = data
     if (data.error) {
       updateMsg.value = friendlyUpdateError(data.error)
       updateErr.value = true
+    } else if (manual) {
+      const at = data.checked_at ? new Date(data.checked_at * 1000).toLocaleTimeString() : ''
+      updateMsg.value = data.update_available
+        ? t('settings.updateFound', { v: data.latest })
+        : t('settings.updateUpToDate', { v: data.current, at })
     }
   } catch (e) {
     updateMsg.value = t('settings.updateFailed')
@@ -354,6 +367,8 @@ function closeUpdateModal() {
 }
 
 onMounted(() => { checkUpdate() })
+// Kept alive: refresh (cached server-side) when coming back to the page.
+onActivated(() => { if (!updateApplying.value) checkUpdate() })
 onUnmounted(() => { stopProgressPolling() })
 </script>
 
@@ -374,6 +389,15 @@ onUnmounted(() => { stopProgressPolling() })
           <label>{{ t('settings.oscHost') }}</label>
           <input type="text" v-model="oscHost">
           <p class="hint">{{ t('settings.oscHostHint') }}</p>
+        </div>
+        <div class="field">
+          <label>{{ t('settings.oscSendTarget') }}</label>
+          <div class="target-row">
+            <input type="text" v-model="oscSendHost" :aria-label="t('settings.oscSendHost')" class="host">
+            <span>:</span>
+            <input type="number" v-model.number="oscSendPort" min="1" max="65535" :aria-label="t('settings.oscSendPort')" class="port">
+          </div>
+          <p class="hint">{{ t('settings.oscSendTargetHint') }}</p>
         </div>
       </section>
 
@@ -527,7 +551,7 @@ onUnmounted(() => { stopProgressPolling() })
         </div>
       </div>
       <div class="ie-bar" style="margin-top:var(--sp-3)">
-        <button class="btn btn-ghost" @click="checkUpdate" :disabled="updateChecking || updateApplying">{{ t('settings.updateCheck') }}</button>
+        <button class="btn btn-ghost" @click="checkUpdate(true)" :disabled="updateChecking || updateApplying">{{ updateChecking ? t('settings.checking') : t('settings.updateCheck') }}</button>
         <button
           v-if="updateInfo?.update_available && !updatePollTimedOut"
           class="btn btn-primary"
@@ -633,6 +657,9 @@ onUnmounted(() => { stopProgressPolling() })
 </template>
 
 <style scoped>
+.target-row { display: flex; align-items: center; gap: var(--sp-2); }
+.target-row .host { flex: 1; min-width: 0; }
+.target-row .port { width: 96px; }
 .page-desc { color: var(--text-muted); font-size: var(--text-sm); margin-bottom: var(--sp-6); }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
 .field { margin-bottom: var(--sp-4); }

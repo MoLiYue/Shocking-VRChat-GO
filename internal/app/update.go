@@ -40,6 +40,15 @@ func newUpdater() *updater {
 	}}
 }
 
+func (u *updater) checkedAt() any {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.cache == nil {
+		return nil
+	}
+	return float64(u.cacheTime.UnixMilli()) / 1000
+}
+
 func (u *updater) clearCache() {
 	u.mu.Lock()
 	u.cache = nil
@@ -80,6 +89,12 @@ func (a *App) applyMirror(u string) string {
 }
 
 var httpClient = &http.Client{Timeout: 120 * time.Second}
+
+// GitHub endpoints (vars for tests).
+var (
+	githubAPIBase = "https://api.github.com"
+	githubWebBase = "https://github.com"
+)
 
 func httpGet(url string, timeout time.Duration) (*http.Response, error) {
 	req, err := http.NewRequest("GET", url, nil)
@@ -139,10 +154,13 @@ func VersionNewer(latest, current string) bool {
 	return false
 }
 
-func (a *App) checkUpdate() map[string]any {
+// checkUpdate returns the latest release info. Results are cached for 5
+// minutes (api.github.com allows 60 unauthenticated requests per hour);
+// force bypasses the cache (the user clicked "check").
+func (a *App) checkUpdate(force bool) map[string]any {
 	u := a.upd
 	u.mu.Lock()
-	if u.cache != nil && time.Since(u.cacheTime) < 5*time.Minute {
+	if !force && u.cache != nil && time.Since(u.cacheTime) < 5*time.Minute {
 		c := u.cache
 		u.mu.Unlock()
 		return c
@@ -171,7 +189,7 @@ func (a *App) checkUpdate() map[string]any {
 }
 
 func (a *App) checkViaAPI() (map[string]any, error) {
-	resp, err := httpGet("https://api.github.com/repos/"+GitHubRepo+"/releases/latest", 15*time.Second)
+	resp, err := httpGet(githubAPIBase+"/repos/"+GitHubRepo+"/releases/latest", 15*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +235,7 @@ var tagInPage = regexp.MustCompile(`/releases/tag/(v?[0-9][0-9A-Za-z.\-]*)`)
 // latestTagFromPage resolves the latest release tag from
 // https://github.com/<repo>/releases/latest (a redirect to .../tag/<tag>).
 func (a *App) latestTagFromPage() (string, error) {
-	url := a.applyMirror("https://github.com/" + GitHubRepo + "/releases/latest")
+	url := a.applyMirror(githubWebBase + "/" + GitHubRepo + "/releases/latest")
 	c := &http.Client{
 		Timeout: 15 * time.Second,
 		// Read the redirect target instead of downloading the HTML page.
@@ -273,7 +291,11 @@ func (a *App) checkViaReleasePage() (map[string]any, error) {
 	}, nil
 }
 
-func (a *App) apiUpdateCheck(*http.Request) (any, error) { return a.checkUpdate(), nil }
+func (a *App) apiUpdateCheck(r *http.Request) (any, error) {
+	res := config.CopyMap(a.checkUpdate(r.URL.Query().Get("force") == "1"))
+	res["checked_at"] = a.upd.checkedAt()
+	return res, nil
+}
 
 // Download limits: the whole download may take as long as it needs (slow
 // mirrors), but it is aborted when no data arrives for downloadIdle.
@@ -514,7 +536,7 @@ func (a *App) apiUpdateApply(*http.Request) (any, error) {
 	if !a.Packaged || runtime.GOOS != "windows" {
 		return nil, httpErr(400, "仅 Windows 打包版本支持自动更新，开发环境请使用 git pull")
 	}
-	chk := a.checkUpdate()
+	chk := a.checkUpdate(false)
 	if !config.Bool(chk["update_available"], false) {
 		return map[string]any{"success": false, "message": "当前已是最新版本"}, nil
 	}
