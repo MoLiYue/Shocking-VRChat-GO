@@ -35,6 +35,23 @@ type Deps struct {
 	ActivityObserver func(addr string, value float64, channel, mode string)
 	// CurveGetter returns curve points for a param path or "A"/"B".
 	CurveGetter func(key string) []Point
+	// Out receives the handler's output; nil = Hub. A range mixer installs
+	// its own sink for its sub-modes.
+	Out Output
+}
+
+// Output is where handlers send waves, clears and boosts.
+type Output interface {
+	BroadcastWave(ch, wavestr string)
+	BroadcastClear(ch string)
+	BroadcastBoost(ch string, on bool, value int)
+}
+
+func (h *Shock) out() Output {
+	if h.deps.Out != nil {
+		return h.deps.Out
+	}
+	return h.deps.Hub
 }
 
 // Context describes the OSC message that triggered a handler call.
@@ -81,9 +98,13 @@ type Shock struct {
 	aheadUntil float64
 	// shockPeak is the strength (0..1) the current shock started from.
 	shockPeak float64
-	warnMu    sync.Mutex
-	warnLast  map[string]float64
-	spsCalcs  map[[2]string]*sps.Calculator
+	// lastOut is the previous output strength (ramp start) of distance/touch.
+	lastOut float64
+	// external: output is rendered by a range mixer (no own feeder).
+	external bool
+	warnMu   sync.Mutex
+	warnLast map[string]float64
+	spsCalcs map[[2]string]*sps.Calculator
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -809,143 +830,118 @@ func (h *Shock) handlerBoost(distance float64, c *Context) {
 	h.mu.Unlock()
 	switch mode {
 	case "1":
-		h.deps.Hub.BroadcastBoost(h.Channel, true, bv)
+		h.out().BroadcastBoost(h.Channel, true, bv)
 		h.logTrigger(c, distance, nil, fmt.Sprintf("boost +%d", bv))
 	case "0":
-		h.deps.Hub.BroadcastBoost(h.Channel, false, bv)
+		h.out().BroadcastBoost(h.Channel, false, bv)
 		h.logTrigger(c, distance, nil, "boost reverted")
 	}
 }
 
 // ---------------------------------------------------------------- feeders
 
-func (h *Shock) distanceTick(last *float64) {
+// Render returns the next n ops (n*100 ms) of this handler's output, or ""
+// when idle. Standalone handlers call it from their paced feeder; a range
+// mixer (Multi) calls it for each sub-mode and mixes the results.
+func (h *Shock) Render(n int) string {
+	if n <= 0 {
+		return ""
+	}
 	mc := h.modeConfig()
 	h.mu.Lock()
-	cur := h.bgCurrentStrength
-	now := nowSec()
-	n := h.opsNeededLocked(now)
-	if (cur == 0 && *last == 0) || n == 0 {
-		h.mu.Unlock()
-		return
+	var w, src, extra string
+	var cur float64
+	switch h.Mode {
+	case "distance":
+		cur = h.bgCurrentStrength
+		if cur == 0 && h.lastOut == 0 {
+			h.mu.Unlock()
+			return ""
+		}
+		dc := h.modeConf(mc, "distance")
+		from := h.lastOut
+		w = h.buildDynamicWave(mc, "distance", from, cur, presetOf(dc), scaleOf(dc), n)
+		h.lastOut = cur
+		preset := h.activeDynamicPreset
+		if preset == "" {
+			preset = "-"
+		}
+		src, extra = "distance", fmt.Sprintf("from=%.3f to=%.3f preset=%s", from, cur, preset)
+	case "shock":
+		from := h.shockLastStrength
+		w, cur = h.shockRenderLocked(mc, n)
+		src, extra = "shock", fmt.Sprintf("from=%.3f to=%.3f duration=%.2fs", from, cur, h.shockDuration(mc))
+	case "touch":
+		from := h.lastOut
+		var p string
+		var sc float64
+		w, cur, p, sc = h.touchRenderLocked(mc, n)
+		src, extra = "touch", fmt.Sprintf("from=%.3f to=%.3f preset=%s scale=%.2f", from, cur, p, sc)
+	case "combo":
+		if h.comboInTouchMode {
+			w, cur, _, _ = h.touchRenderLocked(mc, n)
+			src = "combo/touch"
+		} else {
+			h.lastOut = 0
+			w, cur = h.shockRenderLocked(mc, n)
+			src = "combo/shock"
+		}
 	}
-	dc := h.modeConf(mc, "distance")
-	w := h.buildDynamicWave(mc, "distance", *last, cur, presetOf(dc), scaleOf(dc), n)
-	h.markSentLocked(now, n)
-	preset := h.activeDynamicPreset
 	h.mu.Unlock()
-	if preset == "" {
-		preset = "-"
+	if w != "" {
+		h.logOutput(src, cur, w, extra)
 	}
-	h.logOutput("distance", cur, w, fmt.Sprintf("from=%.3f to=%.3f preset=%s texture_floor=%.2f",
-		*last, cur, preset, h.textureFloor(mc, "distance")))
-	*last = cur
-	h.deps.Hub.BroadcastWave(h.Channel, w)
+	return w
 }
 
-// shockOutputLocked computes the next shock wave; "" when idle or when
-// enough output is already buffered.
-func (h *Shock) shockOutputLocked(mc config.M, now float64) (string, float64) {
-	cur := h.shockStrengthLocked(mc, now)
+// shockRenderLocked computes n ops of shock output; "" when idle.
+func (h *Shock) shockRenderLocked(mc config.M, n int) (string, float64) {
+	if h.isCleared {
+		h.shockLastStrength = 0
+		return "", 0
+	}
+	cur := h.shockStrengthLocked(mc, nowSec())
 	if cur <= 0 {
 		h.shockLastStrength = 0
 		return "", 0
 	}
-	n := h.opsNeededLocked(now)
-	if n == 0 {
-		return "", cur
-	}
 	sc := h.modeConf(mc, "shock")
 	w := h.buildDynamicWave(mc, "shock", h.shockLastStrength, cur, presetOf(sc), scaleOf(sc), n)
-	h.markSentLocked(now, n)
 	h.shockLastStrength = cur
 	return w, cur
 }
 
-func (h *Shock) shockTick() {
-	mc := h.modeConfig()
-	h.mu.Lock()
-	if h.isCleared {
-		h.shockLastStrength = 0
-		h.mu.Unlock()
-		return
+// touchRenderLocked computes n ops of touch output; "" when idle.
+func (h *Shock) touchRenderLocked(mc config.M, n int) (string, float64, string, float64) {
+	if h.Mode == "combo" && h.isCleared {
+		h.lastOut = 0
+		return "", 0, "", 0
 	}
-	from := h.shockLastStrength
-	w, cur := h.shockOutputLocked(mc, nowSec())
-	h.mu.Unlock()
-	if w == "" {
-		return
-	}
-	p := presetOf(h.modeConf(mc, "shock"))
-	if p == "" {
-		p = "-"
-	}
-	h.logOutput("shock", cur, w, fmt.Sprintf("from=%.3f to=%.3f duration=%.2fs preset=%s", from, cur, h.shockDuration(mc), p))
-	h.deps.Hub.BroadcastWave(h.Channel, w)
-}
-
-// touchOutputLocked computes the next touch wave; "" when idle.
-func (h *Shock) touchOutputLocked(mc config.M, last *float64) (string, float64, string, float64) {
 	cur := h.touchStrengthLocked(mc)
 	h.bgCurrentStrength = cur
-	now := nowSec()
-	n := h.opsNeededLocked(now)
-	if (cur == 0 && *last == 0) || n == 0 {
+	if cur == 0 && h.lastOut == 0 {
 		return "", 0, "", 0
 	}
 	p, s := h.resolveTouchProfile(mc, cur)
-	w := h.buildDynamicWave(mc, "touch", *last, cur, p, s, n)
-	h.markSentLocked(now, n)
+	w := h.buildDynamicWave(mc, "touch", h.lastOut, cur, p, s, n)
+	h.lastOut = cur
 	return w, cur, p, s
 }
 
-func (h *Shock) touchTick(last *float64) {
-	mc := h.modeConfig()
+// feed is the standalone feeder tick: keep outputLead buffered in the APP.
+func (h *Shock) feed() {
+	now := nowSec()
 	h.mu.Lock()
-	from := *last
-	w, cur, p, s := h.touchOutputLocked(mc, last)
+	n := h.opsNeededLocked(now)
 	h.mu.Unlock()
+	w := h.Render(n)
 	if w == "" {
 		return
 	}
-	if p == "" {
-		p = "-"
-	}
-	names := []string{"distance", "velocity", "acceleration", "jerk"}
-	h.logOutput("touch", cur, w, fmt.Sprintf("from=%.3f to=%.3f derivative=%s preset=%s scale=%.2f texture_floor=%.2f",
-		from, cur, names[h.touchNDerivative(mc)], p, s, h.textureFloor(mc, "touch")))
-	*last = cur
-	h.deps.Hub.BroadcastWave(h.Channel, w)
-}
-
-func (h *Shock) comboTick(lastTouch *float64) {
-	mc := h.modeConfig()
 	h.mu.Lock()
-	if h.isCleared {
-		h.shockLastStrength = 0
-		*lastTouch = 0
-		h.mu.Unlock()
-		return
-	}
-	var w, src string
-	var cur float64
-	if h.comboInTouchMode {
-		w, cur, _, _ = h.touchOutputLocked(mc, lastTouch)
-		if w != "" {
-			*lastTouch = cur
-		}
-		src = "combo/touch"
-	} else {
-		*lastTouch = 0
-		w, cur = h.shockOutputLocked(mc, nowSec())
-		src = "combo/shock"
-	}
+	h.markSentLocked(now, n)
 	h.mu.Unlock()
-	if w == "" {
-		return
-	}
-	h.logOutput(src, cur, w, "")
-	h.deps.Hub.BroadcastWave(h.Channel, w)
+	h.out().BroadcastWave(h.Channel, w)
 }
 
 func (h *Shock) clearTick() {
@@ -957,6 +953,7 @@ func (h *Shock) clearTick() {
 	h.isCleared = true
 	h.aheadUntil = 0
 	h.shockPeak = 0
+	h.lastOut = 0
 	h.bgCurrentStrength = 0
 	h.touchDist = nil
 	h.activeDynamicPreset = ""
@@ -973,7 +970,7 @@ func (h *Shock) clearTick() {
 		c.Reset()
 	}
 	h.mu.Unlock()
-	h.deps.Hub.BroadcastClear(h.Channel)
+	h.out().BroadcastClear(h.Channel)
 	logx.Debug("[handler] Channel %s cleared after timeout", h.Channel)
 }
 
@@ -1021,24 +1018,12 @@ func (h *Shock) Start() {
 	logx.Info("[handler] Channel %s background job started", h.Channel)
 	h.wg.Add(1)
 	go h.supervise(ctx, "clear_check", 50*time.Millisecond, h.clearTick)
-	period := time.Duration(h.bgWindow * float64(time.Second))
-	switch h.Mode {
-	case "distance":
-		var last float64
-		h.wg.Add(1)
-		go h.supervise(ctx, "distance_feeder", period, func() { h.distanceTick(&last) })
-	case "shock":
-		h.wg.Add(1)
-		go h.supervise(ctx, "shock_feeder", period, h.shockTick)
-	case "touch":
-		var last float64
-		h.wg.Add(1)
-		go h.supervise(ctx, "touch_feeder", period, func() { h.touchTick(&last) })
-	case "combo":
-		var last float64
-		h.wg.Add(1)
-		go h.supervise(ctx, "combo_feeder", period, func() { h.comboTick(&last) })
+	if h.external || h.Mode == "boost" {
+		return // rendered by a range mixer / no wave output
 	}
+	period := time.Duration(h.bgWindow * float64(time.Second))
+	h.wg.Add(1)
+	go h.supervise(ctx, h.Mode+"_feeder", period, h.feed)
 }
 
 // Stop cancels background loops and reverts any active boost.
@@ -1056,11 +1041,11 @@ func (h *Shock) Stop() {
 	h.mu.Unlock()
 	if wasOutputting {
 		// The feeder is gone; stop whatever the APP still has buffered.
-		h.deps.Hub.BroadcastClear(h.Channel)
+		h.out().BroadcastClear(h.Channel)
 		logx.Debug("[handler] Channel %s cleared on stop", h.Channel)
 	}
 	if boosted {
-		h.deps.Hub.BroadcastBoost(h.Channel, false, 0)
+		h.out().BroadcastBoost(h.Channel, false, 0)
 		logx.Info("[handler] Channel %s boost reverted on shutdown", h.Channel)
 	}
 }

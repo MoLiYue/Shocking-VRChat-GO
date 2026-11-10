@@ -173,19 +173,18 @@ func TestOutputPacing(t *testing.T) {
 	h.mu.Lock()
 	h.bgCurrentStrength = 0.5
 	h.mu.Unlock()
-	var last float64
-	h.distanceTick(&last)
+	h.feed()
 	if sent != 2 {
 		t.Fatalf("first tick sent %d ops, want 2 (200 ms lead)", sent)
 	}
-	h.distanceTick(&last)
+	h.feed()
 	if sent != 2 {
 		t.Fatalf("buffer full: sent %d ops, want none", sent)
 	}
 	h.mu.Lock()
 	h.aheadUntil = nowSec() + 0.1 // 100 ms played
 	h.mu.Unlock()
-	h.distanceTick(&last)
+	h.feed()
 	if sent != 3 {
 		t.Fatalf("steady state: sent %d ops total, want 3", sent)
 	}
@@ -194,7 +193,7 @@ func TestOutputPacing(t *testing.T) {
 		h.mu.Lock()
 		h.aheadUntil -= 0.1 // as if 100 ms elapsed
 		h.mu.Unlock()
-		h.distanceTick(&last)
+		h.feed()
 		h.mu.Lock()
 		buffered := h.aheadUntil - nowSec()
 		h.mu.Unlock()
