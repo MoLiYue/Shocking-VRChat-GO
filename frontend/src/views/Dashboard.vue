@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { themeColor } from '@/canvasFont'
 import { formatTime } from '@/time'
-import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api } from '@/api'
 import QrCode from '@/components/QrCode.vue'
 import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp } from 'lucide-vue-next'
@@ -22,6 +22,9 @@ const boost = ref({ A: 0, B: 0 })
 interface UsedSource { kind: 'param' | 'overlimit'; channel: string; mode?: string; rule?: string; operator?: string; value?: number; enabled: boolean }
 interface UsedParam { path: string; sources: UsedSource[]; wildcard: boolean; last_value?: unknown; last_seen_ago?: number }
 const usedParams = ref<UsedParam[]>([])
+// Parameters with no enabled use at all are hidden; partially enabled ones
+// show their enabled and disabled uses separately.
+const activeUsedParams = computed(() => usedParams.value.filter((p) => p.sources.some((s) => s.enabled)))
 const oscStatus = ref('')
 const lastTrigger = ref('-')
 const oscEvents = ref<any[]>([])
@@ -422,6 +425,35 @@ onUnmounted(stopLive)
             <div v-if="!oscEvents.length" class="empty">{{ t('dashboard.noEvents') }}</div>
           </div>
         </section>
+
+        <!-- Parameters the configuration listens to -->
+        <section class="card">
+          <div class="card-head">
+            <h2>{{ t('dashboard.usedTitle') }}</h2>
+            <router-link to="/params" class="head-link">{{ t('dashboard.usedManage') }}</router-link>
+          </div>
+          <div class="used-list">
+            <div v-for="p in activeUsedParams" :key="p.path" class="used-row">
+              <div class="used-top">
+                <span class="live-dot" :class="{ on: p.last_seen_ago != null && p.last_seen_ago < 2 }" />
+                <span class="used-path" :title="p.path">{{ shortPath(p.path) }}</span>
+                <span v-if="p.last_value !== undefined" class="used-val" :title="fmtAgo(p.last_seen_ago)">{{ fmtValue(p.last_value) }}</span>
+              </div>
+              <div class="used-tags">
+                <span v-for="(s, i) in p.sources.filter((x) => x.enabled)" :key="'on' + i" class="used-tag" :class="s.kind"
+                  :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
+                <template v-if="p.sources.some((x) => !x.enabled)">
+                  <span class="used-off-label">{{ t('dashboard.usedDisabled') }}</span>
+                  <span v-for="(s, i) in p.sources.filter((x) => !x.enabled)" :key="'off' + i" class="used-tag off" :class="s.kind"
+                    :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
+                </template>
+                <span v-if="p.last_seen_ago != null" class="used-ago">{{ fmtAgo(p.last_seen_ago) }}</span>
+                <span v-else-if="!p.wildcard" class="used-ago">{{ t('dashboard.usedNever') }}</span>
+              </div>
+            </div>
+            <div v-if="!activeUsedParams.length" class="empty">{{ t('dashboard.usedNone') }}</div>
+          </div>
+        </section>
       </div>
 
       <!-- Right column -->
@@ -455,29 +487,6 @@ onUnmounted(stopLive)
           </template>
         </section>
 
-        <!-- Parameters the configuration listens to -->
-        <section class="card">
-          <div class="card-head">
-            <h2>{{ t('dashboard.usedTitle') }}</h2>
-            <router-link to="/params" class="head-link">{{ t('dashboard.usedManage') }}</router-link>
-          </div>
-          <div class="used-list">
-            <div v-for="p in usedParams" :key="p.path" class="used-row">
-              <div class="used-top">
-                <span class="live-dot" :class="{ on: p.last_seen_ago != null && p.last_seen_ago < 2 }" />
-                <span class="used-path" :title="p.path">{{ shortPath(p.path) }}</span>
-                <span v-if="p.last_value !== undefined" class="used-val" :title="fmtAgo(p.last_seen_ago)">{{ fmtValue(p.last_value) }}</span>
-              </div>
-              <div class="used-tags">
-                <span v-for="(s, i) in p.sources" :key="i" class="used-tag" :class="[s.kind, { off: !s.enabled }]"
-                  :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
-                <span v-if="p.last_seen_ago != null" class="used-ago">{{ fmtAgo(p.last_seen_ago) }}</span>
-                <span v-else-if="!p.wildcard" class="used-ago">{{ t('dashboard.usedNever') }}</span>
-              </div>
-            </div>
-            <div v-if="!usedParams.length" class="empty">{{ t('dashboard.usedNone') }}</div>
-          </div>
-        </section>
       </div>
     </div>
   </div>
@@ -531,7 +540,7 @@ onUnmounted(stopLive)
 
 /* Used parameters */
 .head-link { font-size: var(--text-xs); color: var(--text-muted); }
-.used-list { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 360px; overflow-y: auto; }
+.used-list { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 360px; overflow-y: auto; }
 .used-row { padding: var(--sp-2); border-radius: var(--radius-sm); }
 .used-row:hover { background: var(--bg-hover); }
 .used-top { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-mono); font-size: var(--text-xs); }
@@ -542,7 +551,8 @@ onUnmounted(stopLive)
 .used-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; padding-left: 14px; }
 .used-tag { font-size: var(--text-2xs); padding: 1px 6px; border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-secondary); }
 .used-tag.overlimit { background: var(--warning-surface, rgba(255, 170, 0, 0.12)); color: var(--warning); }
-.used-tag.off { opacity: 0.45; text-decoration: line-through; }
+.used-tag.off { opacity: 0.5; text-decoration: line-through; }
+.used-off-label { font-size: var(--text-2xs); color: var(--text-muted); margin-left: var(--sp-1); }
 .used-ago { font-size: var(--text-2xs); color: var(--text-muted); margin-left: auto; }
 .out-val { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
 .out-val strong { color: var(--text); }

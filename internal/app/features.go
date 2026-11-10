@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"shockingvrc/internal/config"
+	"shockingvrc/internal/device"
 	"shockingvrc/internal/handler"
 	"shockingvrc/internal/logx"
 )
@@ -337,10 +338,22 @@ func (a *App) updateOverlimitTriggersLocked(now time.Time, ch *paramChange) {
 	}
 }
 
-// overlimitBoostsLocked returns the current (decayed) boost per channel.
-// Must be called with overlimitMu held.
-func (a *App) overlimitBoostsLocked(now time.Time) map[string]int {
+// fullBoost is a rule's boost at full strength for one channel:
+// boost_unit "value" (default) = limit_boost points, "percent" =
+// limit_boost % of that channel's base strength limit.
+func fullBoost(rule config.M, base int) int {
+	if config.Str(rule["boost_unit"], "value") == "percent" {
+		pct := config.Clamp(config.Float(rule["limit_boost"], 0), 0, 1000)
+		return config.ClampInt(int(math.Round(float64(base)*pct/100)), 0, 200)
+	}
+	return config.ClampInt(config.Int(rule["limit_boost"], 0), 0, 200)
+}
+
+// overlimitBoostsLocked returns the current (decayed) boost per channel
+// for the given base limits. Must be called with overlimitMu held.
+func (a *App) overlimitBoostsLocked(now time.Time, l device.Limits) map[string]int {
 	out := map[string]int{"A": 0, "B": 0}
+	base := map[string]int{"A": l.LimitA, "B": l.LimitB}
 	for i, r := range a.overlimitRules {
 		rule := config.AsMap(r)
 		if rule == nil || i >= len(a.overlimitState) || !config.Bool(orTrue(rule["enabled"]), true) {
@@ -350,26 +363,26 @@ func (a *App) overlimitBoostsLocked(now time.Time) map[string]int {
 		if st.triggered.IsZero() {
 			continue
 		}
-		full := config.ClampInt(config.Int(rule["limit_boost"], 0), 0, 200)
 		decay := config.Float(rule["decay_seconds"], defaultOverlimitDecay)
 		if decay <= 0 && changeOperators[config.Str(config.Get(rule, "condition", "operator"), "")] {
 			decay = defaultOverlimitDecay // a change has no duration to hold for
 		}
-		var v int
+		left := 0.0
 		if decay <= 0 {
 			if st.active {
-				v = full
+				left = 1
 			}
 		} else {
-			left := decayRemaining(rule["decay_curve"], now.Sub(st.triggered).Seconds()/decay)
-			v = int(math.Ceil(float64(full)*left - 1e-9))
+			left = decayRemaining(rule["decay_curve"], now.Sub(st.triggered).Seconds()/decay)
 		}
 		ch := config.Str(rule["channel"], "both")
-		if (ch == "a" || ch == "both") && v > out["A"] {
-			out["A"] = v
-		}
-		if (ch == "b" || ch == "both") && v > out["B"] {
-			out["B"] = v
+		for _, c := range []string{"A", "B"} {
+			if ch != "both" && ch != strings.ToLower(c) {
+				continue
+			}
+			if v := int(math.Ceil(float64(fullBoost(rule, base[c]))*left - 1e-9)); v > out[c] {
+				out[c] = v
+			}
 		}
 	}
 	return out
@@ -463,8 +476,9 @@ func (a *App) overlimitLoop(ctx context.Context) {
 }
 
 func (a *App) overlimitTick(now time.Time) {
+	l := a.limitsFromSettings() // outside overlimitMu: reads the config store
 	a.overlimitMu.Lock()
-	b := a.overlimitBoostsLocked(now)
+	b := a.overlimitBoostsLocked(now, l)
 	changed := b["A"] != a.overlimitEffective["A"] || b["B"] != a.overlimitEffective["B"]
 	if changed {
 		logx.Debug("[overlimit] boost A +%d B +%d", b["A"], b["B"])

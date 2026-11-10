@@ -85,6 +85,8 @@ interface Rule {
   name: string
   channel: 'a' | 'b' | 'both'
   limit_boost: number
+  // 'value' = limit_boost points, 'percent' = % of the channel's base limit
+  boost_unit?: 'value' | 'percent'
   decay_seconds: number
   // Preset name or custom points (x = elapsed fraction, y = remaining fraction)
   decay_curve: string | CurvePoint[]
@@ -108,7 +110,18 @@ const isChangeOp = (op: string) => CHANGE_OPS.includes(op)
 
 const unsaved = useUnsaved(() => ({ rules: rules.value }))
 
+// Base strength limits, to show what a percentage boost amounts to.
+const baseLimits = ref<{ A: number; B: number }>({ A: 0, B: 0 })
+function percentPreview(r: Rule): string {
+  const chs = r.channel === 'both' ? ['A', 'B'] as const : [r.channel.toUpperCase() as 'A' | 'B']
+  return chs.map(c => `${c} +${Math.min(200, Math.round(baseLimits.value[c] * (r.limit_boost || 0) / 100))}`).join(' · ')
+}
+
 async function load() {
+  try {
+    const l = await api('/api/v1/strength_limit')
+    baseLimits.value = { A: l.channel_a ?? 0, B: l.channel_b ?? 0 }
+  } catch {}
   const data = await api('/api/v1/overlimit_rules')
   rules.value = data.rules || []
   effective.value = data.effective || { A: 0, B: 0 }
@@ -120,6 +133,7 @@ function addRule() {
     name: `${t('overlimit.rulePrefix')} ${rules.value.length + 1}`,
     channel: 'both',
     limit_boost: 20,
+    boost_unit: 'value',
     decay_seconds: 10,
     decay_curve: 'linear',
     condition: {
@@ -208,7 +222,10 @@ onMounted(load)
             <span class="cond-label">{{ t('overlimit.then') }}</span>
             <AppSelect v-model="rule.channel" class="effect-channel" :options="[{ value: 'a', label: t('overlimit.channelAOption') }, { value: 'b', label: t('overlimit.channelBOption') }, { value: 'both', label: t('overlimit.channelBothOption') }]" />
             <span class="effect-text">{{ t('overlimit.limitBoostBy') }}</span>
-            <input type="number" v-model.number="rule.limit_boost" min="0" max="200" class="effect-value" :aria-label="t('overlimit.limitBoostBy')">
+            <input type="number" v-model.number="rule.limit_boost" min="0" :max="rule.boost_unit === 'percent' ? 1000 : 200" class="effect-value" :aria-label="t('overlimit.limitBoostBy')">
+            <AppSelect :model-value="rule.boost_unit || 'value'" @update:model-value="(u: 'value' | 'percent') => rule.boost_unit = u" class="unit-select"
+              :options="[{ value: 'value', label: t('overlimit.unitValue') }, { value: 'percent', label: t('overlimit.unitPercent') }]" />
+            <span v-if="rule.boost_unit === 'percent'" class="effect-text pct-preview" :title="t('overlimit.percentHint')">≈ {{ percentPreview(rule) }}</span>
           </div>
           <div class="effect-row">
             <span class="cond-label"></span>
@@ -295,6 +312,8 @@ onMounted(load)
 .effect-channel { width: 130px; min-width: 0; }
 .effect-text { font-size: var(--text-sm); color: var(--text-secondary); }
 .effect-value { width: 80px; text-align: center; font-size: var(--text-sm); font-weight: 600; }
+.unit-select { width: 120px; min-width: 0; }
+.pct-preview { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .curve-select { width: 150px; min-width: 0; }
 .curve-preview { background: var(--bg-tertiary); border-radius: var(--radius-sm); }
 .curve-line { fill: rgba(var(--accent-rgb), 0.15); stroke: var(--accent); stroke-width: 1.5; }

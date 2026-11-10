@@ -829,7 +829,7 @@ func TestOverlimitBoostDecays(t *testing.T) {
 	boosts := func(at time.Time) map[string]int {
 		a.overlimitMu.Lock()
 		defer a.overlimitMu.Unlock()
-		return a.overlimitBoostsLocked(at)
+		return a.overlimitBoostsLocked(at, a.limitsFromSettings())
 	}
 	a.overlimitOSCHook("/p", []any{1.0})
 	a.overlimitOSCHook("/q", []any{1.0})
@@ -1012,7 +1012,7 @@ func TestOverlimitChangeOperators(t *testing.T) {
 	if b := func() map[string]int {
 		a.overlimitMu.Lock()
 		defer a.overlimitMu.Unlock()
-		return a.overlimitBoostsLocked(time.Now())
+		return a.overlimitBoostsLocked(time.Now(), a.limitsFromSettings())
 	}(); b["A"] != 10 {
 		t.Fatalf("boost after change: %v", b)
 	}
@@ -1042,5 +1042,25 @@ func TestParamsUsed(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("TouchAreaA missing: %v", r)
+	}
+}
+
+// boost_unit "percent": the boost is a percentage of each channel's own
+// base strength limit.
+func TestOverlimitPercentBoost(t *testing.T) {
+	e := newEnv(t)
+	e.postJSON(t, "/api/v1/strength_limit", map[string]any{"channel_a": 40, "channel_b": 80})
+	e.postJSON(t, "/api/v1/overlimit_rules", map[string]any{"rules": []any{map[string]any{
+		"name": "pct", "channel": "both", "limit_boost": 50, "boost_unit": "percent", "decay_seconds": 10,
+		"condition": map[string]any{"param": "/p", "operator": "==", "value": 1}}}})
+	a := e.a
+	a.overlimitOSCHook("/p", []any{1.0})
+	a.overlimitMu.Lock()
+	t0 := a.overlimitState[0].triggered
+	full := a.overlimitBoostsLocked(t0, a.limitsFromSettings())
+	half := a.overlimitBoostsLocked(t0.Add(5*time.Second), a.limitsFromSettings())
+	a.overlimitMu.Unlock()
+	if full["A"] != 20 || full["B"] != 40 || half["A"] != 10 || half["B"] != 20 {
+		t.Fatalf("full %v half %v, want A 20/10 B 40/20", full, half)
 	}
 }
