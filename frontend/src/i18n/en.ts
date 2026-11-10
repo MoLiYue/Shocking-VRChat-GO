@@ -9,6 +9,7 @@ export default {
     sps: 'SPS2 / OGB',
     strength: 'Strength',
     overlimit: 'Overlimit Rules',
+    debug: 'Debug',
     modes: 'Modes',
     modeShock: 'Shock',
     modeDistance: 'Distance',

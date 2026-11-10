@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   LayoutDashboard, SlidersHorizontal, Plug, Gamepad2, Zap, Ruler, Hand,
-  Shuffle, FlaskConical, ScrollText, Disc, Activity, MessageSquare, Settings, Languages, Power,
+  Shuffle, FlaskConical, ScrollText, Disc, Activity, Bug, MessageSquare, Settings, Languages, Power,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Sun, Moon,
 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
@@ -42,10 +42,13 @@ interface NavItem {
 // depend on the current language.
 const MODES_GROUP_KEY = 'nav.modes'
 
+const DEBUG_GROUP_KEY = 'nav.debug'
+
 const navItems = computed<NavItem[]>(() => [
   { path: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
   { path: '/params', label: t('nav.setup'), icon: SlidersHorizontal },
   { path: '/sps', label: t('nav.sps'), icon: Plug },
+  { path: '/chatbox', label: t('nav.chatbox'), icon: MessageSquare },
   {
     key: MODES_GROUP_KEY, label: t('nav.modes'), icon: Gamepad2,
     children: [
@@ -55,15 +58,29 @@ const navItems = computed<NavItem[]>(() => [
       { path: '/mode/combo', label: t('nav.modeCombo'), icon: Shuffle },
     ],
   },
-  { path: '/wave-test', label: t('nav.waveTest'), icon: FlaskConical },
+  {
+    // tools for testing / inspecting rather than day-to-day setup
+    key: DEBUG_GROUP_KEY, label: t('nav.debug'), icon: Bug,
+    children: [
+      { path: '/wave-test', label: t('nav.waveTest'), icon: FlaskConical },
+      { path: '/recorder', label: t('nav.recorder'), icon: Disc },
+      { path: '/monitor', label: t('nav.monitor'), icon: Activity },
+    ],
+  },
   { path: '/logs', label: t('nav.logs'), icon: ScrollText },
-  { path: '/recorder', label: t('nav.recorder'), icon: Disc },
-  { path: '/monitor', label: t('nav.monitor'), icon: Activity },
-  { path: '/chatbox', label: t('nav.chatbox'), icon: MessageSquare },
   { path: '/settings', label: t('nav.settings'), icon: Settings },
 ])
 
 const expandedGroups = ref<Set<string>>(new Set([MODES_GROUP_KEY]))
+// The group holding the current page is always expanded (debug starts collapsed).
+const route = useRoute()
+watch(() => route.path, (p) => {
+  for (const item of navItems.value) {
+    if (item.key && item.children?.some((c) => c.path === p) && !expandedGroups.value.has(item.key)) {
+      expandedGroups.value = new Set([...expandedGroups.value, item.key])
+    }
+  }
+}, { immediate: true })
 
 // data-tour anchor contract: map top-level nav paths to stable tour anchors.
 const TOUR_ANCHORS: Record<string, string> = {

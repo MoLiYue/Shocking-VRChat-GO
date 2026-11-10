@@ -9,6 +9,7 @@ export default {
     sps: 'SPS2 / OGB',
     strength: '强度设置',
     overlimit: '超限规则',
+    debug: '调试',
     modes: '模式',
     modeShock: '电击',
     modeDistance: '距离',
