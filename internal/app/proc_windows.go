@@ -5,6 +5,9 @@ package app
 import (
 	"os/exec"
 	"syscall"
+	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -16,11 +19,25 @@ const (
 // spawnDetached starts a GUI process (our own exe) that outlives us.
 func spawnDetached(name string, args []string) error {
 	cmd := exec.Command(name, args...)
+	// No HideWindow: it sets STARTF_USESHOWWINDOW + SW_HIDE, and Windows
+	// applies that to the first ShowWindow of the new process, so the
+	// restarted program ran with an invisible window. A windowsgui exe has
+	// no console to hide anyway.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: detachedProcess | createNewProcessGroup,
-		HideWindow:    true,
 	}
 	return cmd.Start()
+}
+
+// WaitProcessExit waits up to timeout for process pid to exit.
+func WaitProcessExit(pid int, timeout time.Duration) bool {
+	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
+	if err != nil {
+		return true // already gone (or not ours)
+	}
+	defer windows.CloseHandle(h)
+	ev, _ := windows.WaitForSingleObject(h, uint32(timeout/time.Millisecond))
+	return ev == windows.WAIT_OBJECT_0
 }
 
 // spawnHiddenConsole starts a console program (cmd.exe running the update

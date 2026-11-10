@@ -41,12 +41,28 @@ async function load() {
   wsPort.value = adv.ws?.listen_port || 28846
   v4Enabled.value = adv.ws?.v4_enabled !== false
   webPort.value = adv.web_server?.listen_port || 8800
-  webHost.value = adv.web_server?.listen_host || '127.0.0.1'
+  // Must match the backend default (0.0.0.0): a wrong fallback here would
+  // silently move the server to localhost-only on the next save.
+  webHost.value = adv.web_server?.listen_host || '0.0.0.0'
   logLevel.value = adv.log_level || 'INFO'
   githubMirror.value = adv.general?.github_mirror || ''
   minimizeToTray.value = !!adv.general?.minimize_to_tray
   try { trayAvailable.value = !!(await api('/api/v1/status')).tray_available } catch {}
   unsaved.markClean()
+}
+
+async function waitForServer(base: string, timeoutMs = 30000) {
+  const start = Date.now()
+  await new Promise(r => setTimeout(r, 1500)) // let the restart begin
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Any answer means the server is up. A different port is another
+      // origin, so use no-cors (opaque response) for that case.
+      await fetch(`${base}/api/v1/status`, { cache: 'no-store', mode: base ? 'no-cors' : 'same-origin' })
+      return
+    } catch {}
+    await new Promise(r => setTimeout(r, 500))
+  }
 }
 
 async function save() {
@@ -65,13 +81,13 @@ async function save() {
       // If web port changed, redirect to new port after delay
       const newPort = webPort.value
       const currentPort = window.location.port
-      if (String(newPort) !== currentPort) {
-        setTimeout(() => {
-          window.location.href = `http://${window.location.hostname}:${newPort}/settings`
-        }, 3000)
-      } else {
-        setTimeout(() => window.location.reload(), 3000)
-      }
+      const target = String(newPort) !== currentPort
+        ? `http://${window.location.hostname}:${newPort}/settings`
+        : window.location.href
+      // Reload only once the (restarted) server answers again; a fixed
+      // delay could land on a dead port and leave an error page.
+      waitForServer(String(newPort) !== currentPort ? `http://${window.location.hostname}:${newPort}` : '')
+        .then(() => { window.location.href = target })
     } else {
       msg.value = data.message; msgErr.value = false
     }

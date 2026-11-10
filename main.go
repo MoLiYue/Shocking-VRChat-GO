@@ -121,7 +121,15 @@ func main() {
 
 	// Single instance: if we are already running, bring that window forward
 	// and exit instead of failing on the busy port.
-	if os.Getenv("SVRC_RESTART") == "" && activateRunningInstance(port) {
+	if restartOf := os.Getenv("SVRC_RESTART"); restartOf != "" {
+		// We replace a running instance (settings restart): let it exit
+		// first so its ports and WebView2 data folder are free.
+		if pid, err := strconv.Atoi(restartOf); err == nil {
+			if !app.WaitProcessExit(pid, 15*time.Second) {
+				logx.Warn("[init] Previous instance (pid %d) still running after 15s", pid)
+			}
+		}
+	} else if activateRunningInstance(port) {
 		logx.Info("[init] Already running; activated the existing window.")
 		logx.Close()
 		return

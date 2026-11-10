@@ -246,21 +246,21 @@ func (a *App) Shutdown() {
 }
 
 // RestartProcess re-executes the program (used when the web port changes).
+// The new process waits for this one to exit (SVRC_RESTART=<pid>) before
+// binding ports and opening its window; this one shuts down normally so its
+// WebView2 instance closes cleanly instead of being killed by os.Exit.
 func (a *App) RestartProcess() {
 	exe, err := os.Executable()
 	if err != nil {
 		logx.Error("[restart] %v", err)
 		return
 	}
-	a.Engine.Stop(false)
-	// Tell the new process it replaces us, so the single-instance check
-	// does not hand control back to this (exiting) process.
-	_ = os.Setenv("SVRC_RESTART", "1")
+	_ = os.Setenv("SVRC_RESTART", strconv.Itoa(os.Getpid()))
 	if err := spawnDetached(exe, os.Args[1:]); err != nil {
+		_ = os.Unsetenv("SVRC_RESTART")
 		logx.Error("[restart] spawn failed: %v", err)
 		return
 	}
-	logx.Info("[restart] New process started, exiting.")
-	logx.Close()
-	os.Exit(0)
+	logx.Info("[restart] New process started, shutting down this one.")
+	a.Shutdown()
 }

@@ -30,36 +30,40 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 		return i
 	}
 	a.Cfg.Write(func(adv, _ config.M) {
+		// The settings page always sends every field; only values that
+		// actually change may trigger a restart (a restart drops device
+		// connections, and a web_server change restarts the whole program).
+		set := func(section, key string, v any, what string) {
+			s := config.Sub(adv, true, section)
+			if !config.Equal(s[key], v) {
+				s[key] = v
+				if what != "" {
+					restart[what] = true
+				}
+			}
+		}
 		if o := config.AsMap(data["osc"]); o != nil {
-			s := config.Sub(adv, true, "osc")
 			if v, ok := o["listen_port"]; ok {
-				s["listen_port"] = toInt(v)
-				restart["osc"] = true
+				set("osc", "listen_port", toInt(v), "osc")
 			}
 			if v, ok := o["listen_host"]; ok {
-				s["listen_host"] = v
-				restart["osc"] = true
+				set("osc", "listen_host", v, "osc")
 			}
 		}
 		if o := config.AsMap(data["ws"]); o != nil {
-			s := config.Sub(adv, true, "ws")
 			if v, ok := o["listen_port"]; ok {
-				s["listen_port"] = toInt(v)
-				restart["ws"] = true
+				set("ws", "listen_port", toInt(v), "ws")
 			}
 			if v, ok := o["v4_enabled"]; ok {
-				s["v4_enabled"] = config.Bool(v, true)
+				set("ws", "v4_enabled", config.Bool(v, true), "")
 			}
 		}
 		if o := config.AsMap(data["web_server"]); o != nil {
-			s := config.Sub(adv, true, "web_server")
 			if v, ok := o["listen_port"]; ok {
-				s["listen_port"] = toInt(v)
-				restart["web_server"] = true
+				set("web_server", "listen_port", toInt(v), "web_server")
 			}
 			if v, ok := o["listen_host"]; ok {
-				s["listen_host"] = v
-				restart["web_server"] = true
+				set("web_server", "listen_host", v, "web_server")
 			}
 		}
 		if v, ok := data["log_level"]; ok {

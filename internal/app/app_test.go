@@ -941,3 +941,25 @@ func TestDecayCurves(t *testing.T) {
 		}
 	}
 }
+
+// The settings page sends every field on save; unchanged values must not
+// restart the engine (drops device connections) or the whole program.
+func TestSettingsSaveRestartsOnlyOnChange(t *testing.T) {
+	e := newEnv(t)
+	cfg := e.getJSON(t, "/api/v1/config")
+	adv := config.AsMap(cfg["advanced"])
+	body := map[string]any{
+		"osc":        config.AsMap(adv["osc"]),
+		"ws":         map[string]any{"listen_port": config.Get(adv, "ws", "listen_port"), "v4_enabled": true},
+		"web_server": map[string]any{"listen_port": config.Get(adv, "web_server", "listen_port"), "listen_host": config.Get(adv, "web_server", "listen_host")},
+		"log_level":  "INFO",
+	}
+	r := e.postJSON(t, "/api/v1/settings", body)
+	if l := config.AsList(r["restart_needed"]); len(l) != 0 {
+		t.Fatalf("unchanged settings requested restart: %v", l)
+	}
+	body["log_level"] = "DEBUG" // not a restart setting either
+	if l := config.AsList(e.postJSON(t, "/api/v1/settings", body)["restart_needed"]); len(l) != 0 {
+		t.Fatalf("log level change requested restart: %v", l)
+	}
+}
