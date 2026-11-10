@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
@@ -108,7 +109,7 @@ const operators = ['==', '!=', '>', '<', '>=', '<=']
 const CHANGE_OPS = ['changed', 'increased', 'decreased']
 const isChangeOp = (op: string) => CHANGE_OPS.includes(op)
 
-const unsaved = useUnsaved(() => ({ rules: rules.value }))
+const unsaved = useUnsaved(() => ({ rules: rules.value }), { save, delay: 800 })
 
 // Base strength limits, to show what a percentage boost amounts to.
 const baseLimits = ref<{ A: number; B: number }>({ A: 0, B: 0 })
@@ -118,6 +119,7 @@ function percentPreview(r: Rule): string {
 }
 
 async function load() {
+  unsaved.markLoading()
   try {
     const l = await api('/api/v1/strength_limit')
     baseLimits.value = { A: l.channel_a ?? 0, B: l.channel_b ?? 0 }
@@ -147,21 +149,18 @@ function addRule() {
 
 async function save() {
   const data = await apiPost('/api/v1/overlimit_rules', { rules: rules.value })
-  if (data.success) {
-    msg.value = t('overlimit.savedSuccess')
-    msgType.value = 'ok'
-    rules.value = data.rules
-  } else {
+  // Do not replace rules.value with the response: that would re-render the
+  // inputs while the user is typing (auto-save runs mid-edit).
+  if (data.success) unsaved.markClean()
+  else {
     msg.value = t('overlimit.saveFailed')
     msgType.value = 'err'
+    setTimeout(() => msg.value = '', 3000)
   }
-  setTimeout(() => msg.value = '', 3000)
-  if (data.success) unsaved.markClean()
 }
 
-async function removeRule(index: number) {
-  rules.value.splice(index, 1)
-  await save()
+function removeRule(index: number) {
+  rules.value.splice(index, 1) // auto-saved
 }
 
 function moveUp(index: number) {
@@ -264,9 +263,8 @@ onMounted(load)
 
     <div class="save-bar sticky">
       <button class="btn btn-ghost" @click="addRule"><Plus :size="15" />{{ t('overlimit.addRule') }}</button>
-      <button class="btn btn-primary" @click="save">{{ t('overlimit.saveAll') }}</button>
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('overlimit.reloadAll') }}</button>
-      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
+      <AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" />
       <span class="msg" :class="{ ok: msgType === 'ok', err: msgType === 'err' }">{{ msg }}</span>
     </div>
 

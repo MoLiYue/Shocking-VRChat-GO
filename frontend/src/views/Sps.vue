@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { RotateCcw } from 'lucide-vue-next'
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api, apiPost } from '@/api'
@@ -35,9 +36,10 @@ function flash(target: 'save' | 'add', text: string, isErr: boolean) {
   setTimeout(() => { if (target === 'save') msg.value = ''; else addMsg.value = '' }, 3000)
 }
 
-const unsaved = useUnsaved(() => ({ enabled: enabled.value, heartbeat: heartbeat.value, interval: interval.value, targetHost: targetHost.value, targetPort: targetPort.value }))
+const unsaved = useUnsaved(() => ({ enabled: enabled.value, heartbeat: heartbeat.value, interval: interval.value, targetHost: targetHost.value, targetPort: targetPort.value }), { save: save, delay: 1000 })
 
 async function load() {
+  unsaved.markLoading()
   try {
     const data = await api('/api/v1/sps')
     const cfg = data.sps ?? {}
@@ -71,8 +73,8 @@ async function save() {
       ogb_target_host: targetHost.value,
       ogb_target_port: targetPort.value,
     })
-    flash('save', data.success ? t('common.saved') : t('common.saveFailed'), !data.success)
-    if (data.success) await load()
+    if (data.success) unsaved.markClean()
+    else flash('save', t('common.saveFailed'), true)
   } catch {
     flash('save', t('common.saveFailed'), true)
   }
@@ -214,9 +216,8 @@ onUnmounted(stopZones)
     </section>
 
     <div class="save-bar sticky">
-      <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
+      <AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" />
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
-      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
     </div>
 

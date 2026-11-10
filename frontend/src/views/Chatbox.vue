@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { RotateCcw, Send } from 'lucide-vue-next'
 import { ref, onMounted, computed } from 'vue'
 import { api, apiPost } from '@/api'
@@ -49,9 +50,10 @@ const previewMessage = computed(() => {
   return msg
 })
 
-const unsaved = useUnsaved(() => ({ enabled: enabled.value, targetHost: targetHost.value, targetPort: targetPort.value, intervalSeconds: intervalSeconds.value, sendNotification: sendNotification.value, triggerSfx: triggerSfx.value, messageTemplate: messageTemplate.value }))
+const unsaved = useUnsaved(() => ({ enabled: enabled.value, targetHost: targetHost.value, targetPort: targetPort.value, intervalSeconds: intervalSeconds.value, sendNotification: sendNotification.value, triggerSfx: triggerSfx.value, messageTemplate: messageTemplate.value }), { save: save, delay: 1000 })
 
 async function load() {
+  unsaved.markLoading()
   const data = await api('/api/v1/chatbox')
   enabled.value = data.enabled ?? false
   targetHost.value = data.target_host ?? '127.0.0.1'
@@ -76,8 +78,6 @@ async function save() {
     })
     if (data.success) {
       unsaved.markClean()
-      msg.value = t('common.saved')
-      msgErr.value = false
     } else {
       msg.value = t('common.saveFailed')
       msgErr.value = true
@@ -197,11 +197,10 @@ onMounted(load)
 
     <!-- Actions -->
     <div class="save-bar sticky">
-      <button class="btn btn-primary" @click="save">{{ t('chatbox.save') }}</button>
+      <AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" />
       <button class="btn btn-ghost" @click="sendTest"><Send :size="14" />{{ t('chatbox.testSend') }}</button>
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
-      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg" :class="{ err: testMsgErr }">{{ testMsg }}</span>
     </div>
 

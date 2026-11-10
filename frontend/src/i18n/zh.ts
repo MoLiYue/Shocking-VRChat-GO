@@ -31,6 +31,10 @@ export default {
   },
   // Common
   common: {
+    autoSaving: '保存中…',
+    autoSaved: '已自动保存',
+    autoSaveFailed: '自动保存失败',
+    retry: '重试',
     unsavedTitle: '有未保存的修改',
     unsavedBody: '离开后这些修改会丢失。',
     discard: '放弃修改',
@@ -161,6 +165,8 @@ export default {
     githubMirrorHint: '中国大陆用户建议填写代理地址加速更新下载。',
     githubMirrorPlaceholder: '留空 = 直连 GitHub',
     githubDirect: '直连',
+    saveNetwork: '保存端口设置（需要重启）',
+    networkUnsaved: '端口/地址修改未保存',
     saveSettings: '保存设置',
     reloadSettings: '重新加载',
     savedRestarting: '已保存，程序正在重启... 请稍候刷新页面。',
@@ -233,7 +239,7 @@ export default {
     fixErrors: '有 {n} 个参数需要修改后才能保存',
     appliedLive: '已保存并立即生效',
     saving: '保存中…',
-    liveHint: '保存后立即生效，不会中断正在进行的输出',
+    liveHint: '修改自动保存并立即生效，不会中断正在进行的输出',
     strengthLimitEdit: '在强度设置中修改',
     strengthLimitHint: '强度上限统一在「强度设置」页调整',
     title: '参数管理',
@@ -577,8 +583,8 @@ export default {
       body: '为参数选择模式：距离（越近越强）、电击（触碰一激灵）、触摸（按抚摸速度）、Combo（短碰电击+持续柔和）。',
     },
     saveParam: {
-      title: '保存生效',
-      body: '点击保存后自动热重载，即时生效，设备连接不会断开。',
+      title: '自动保存',
+      body: '修改会自动保存并立即热重载生效，设备连接不会断开。',
     },
     gotoStrength: {
       title: '第二步：强度设置',

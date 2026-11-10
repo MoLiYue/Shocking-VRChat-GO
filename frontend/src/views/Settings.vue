@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { themePref, setTheme, type ThemePref } from '@/theme'
 import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
@@ -31,9 +32,15 @@ const msgErr = ref(false)
 const importMsg = ref('')
 const importErr = ref(false)
 
-const unsaved = useUnsaved(() => ({ oscPort: oscPort.value, oscHost: oscHost.value, wsPort: wsPort.value, v4Enabled: v4Enabled.value, webPort: webPort.value, webHost: webHost.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value }))
+// Ports / listen addresses need a restart (devices reconnect, or the whole
+// program restarts), so they keep an explicit save button. Everything else
+// is saved automatically.
+const unsaved = useUnsaved(() => ({ oscPort: oscPort.value, oscHost: oscHost.value, wsPort: wsPort.value, webPort: webPort.value, webHost: webHost.value }))
+const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value }), { save: saveAuto, delay: 800 })
 
 async function load() {
+  unsaved.markLoading()
+  autoUnsaved.markLoading()
   const data = await api('/api/v1/config')
   const adv = data.advanced || {}
   oscPort.value = adv.osc?.listen_port || 9001
@@ -47,8 +54,20 @@ async function load() {
   logLevel.value = adv.log_level || 'INFO'
   githubMirror.value = adv.general?.github_mirror || ''
   minimizeToTray.value = !!adv.general?.minimize_to_tray
-  try { trayAvailable.value = !!(await api('/api/v1/status')).tray_available } catch {}
   unsaved.markClean()
+  autoUnsaved.markClean()
+  try { trayAvailable.value = !!(await api('/api/v1/status')).tray_available } catch {}
+}
+
+async function saveAuto() {
+  const data = await apiPost('/api/v1/settings', {
+    ws: { v4_enabled: v4Enabled.value },
+    log_level: logLevel.value,
+    github_mirror: githubMirror.value,
+    minimize_to_tray: minimizeToTray.value,
+  })
+  if (data.success) autoUnsaved.markClean()
+  else { msg.value = data.message || t('common.saveFailed'); msgErr.value = true; setTimeout(() => msg.value = '', 8000) }
 }
 
 async function waitForServer(base: string, timeoutMs = 30000) {
@@ -68,11 +87,8 @@ async function waitForServer(base: string, timeoutMs = 30000) {
 async function save() {
   const data = await apiPost('/api/v1/settings', {
     osc: { listen_port: oscPort.value, listen_host: oscHost.value },
-    ws: { listen_port: wsPort.value, v4_enabled: v4Enabled.value },
+    ws: { listen_port: wsPort.value },
     web_server: { listen_port: webPort.value, listen_host: webHost.value },
-    log_level: logLevel.value,
-    github_mirror: githubMirror.value,
-    minimize_to_tray: minimizeToTray.value,
   })
   if (data.success) {
     if (data.restart_needed?.length) {
@@ -440,9 +456,12 @@ onUnmounted(() => { stopProgressPolling() })
     </div>
 
     <div class="save-bar sticky">
-      <button class="btn btn-primary" @click="save">{{ t('settings.saveSettings') }}</button>
-      <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('settings.reloadSettings') }}</button>
-      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
+      <AutoSaveStatus :state="autoUnsaved.state.value" @retry="autoUnsaved.flush()" />
+      <template v-if="unsaved.dirty.value">
+        <button class="btn btn-primary" @click="save">{{ t('settings.saveNetwork') }}</button>
+        <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('settings.reloadSettings') }}</button>
+        <span class="unsaved-badge">{{ t('settings.networkUnsaved') }}</span>
+      </template>
       <span class="msg" :class="{ err: msgErr }">{{ msg }}</span>
     </div>
 

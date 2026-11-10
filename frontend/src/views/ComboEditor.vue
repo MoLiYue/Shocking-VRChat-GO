@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
@@ -25,9 +26,10 @@ async function loadPresets() {
   presets.value = data.presets || []
 }
 
-const unsaved = useUnsaved(() => ({ ch: activeChannel.value, switchDuration: switchDuration.value, shockDuration: shockDuration.value, shockPreset: shockPreset.value, shockScale: shockScale.value, touchPreset: touchPreset.value, touchScale: touchScale.value, touchDerivative: touchDerivative.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+const unsaved = useUnsaved(() => ({ ch: activeChannel.value, switchDuration: switchDuration.value, shockDuration: shockDuration.value, shockPreset: shockPreset.value, shockScale: shockScale.value, touchPreset: touchPreset.value, touchScale: touchScale.value, touchDerivative: touchDerivative.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }), { save: saveCombo })
 
 async function loadCombo() {
+  unsaved.markLoading()
   const data = await api(`/api/v1/combo/${activeChannel.value}`)
   switchDuration.value = data.combo?.switch_duration ?? 0.3
   shockDuration.value = data.shock?.duration ?? 2
@@ -48,8 +50,9 @@ async function saveCombo() {
     touch: { wave_preset: touchPreset.value || null, wave_scale: touchScale.value, n_derivative: touchDerivative.value },
     trigger_range: { bottom: triggerBottom.value, top: triggerTop.value },
   })
-  msg.value = data.success ? t('common.saved') : t('common.saveFailed')
-  setTimeout(() => msg.value = '', 3000)
+  // Success is shown by the auto-save indicator; only report failures.
+  msg.value = data.success ? '' : t('common.saveFailed')
+  if (!data.success) setTimeout(() => msg.value = '', 3000)
   if (data.success) unsaved.markClean()
 }
 
@@ -108,9 +111,8 @@ onMounted(() => { loadPresets(); loadCombo() })
         </div>
 
         <div class="save-bar">
-          <button class="btn btn-primary" @click="saveCombo">{{ t('common.save') }}</button>
+      <AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" />
           <button class="btn btn-ghost" @click="loadCombo">{{ t('common.reload') }}</button>
-          <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg" v-if="msg">{{ msg }}</span>
         </div>
       </div>

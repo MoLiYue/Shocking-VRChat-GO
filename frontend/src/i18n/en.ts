@@ -31,6 +31,10 @@ export default {
   },
   // Common
   common: {
+    autoSaving: 'Saving…',
+    autoSaved: 'Saved automatically',
+    autoSaveFailed: 'Auto-save failed',
+    retry: 'Retry',
     unsavedTitle: 'Unsaved changes',
     unsavedBody: 'Your changes will be lost if you leave.',
     discard: 'Discard',
@@ -161,6 +165,8 @@ export default {
     githubMirrorHint: 'For users in China mainland to speed up update downloads.',
     githubMirrorPlaceholder: 'Empty = direct GitHub access',
     githubDirect: 'Direct',
+    saveNetwork: 'Save port settings (restart)',
+    networkUnsaved: 'Port/address changes not saved',
     saveSettings: 'Save Settings',
     reloadSettings: 'Reload',
     savedRestarting: 'Saved. Restarting... Please refresh shortly.',
@@ -577,8 +583,8 @@ export default {
       body: 'Choose a mode: Distance (closer = stronger), Shock (a jolt on touch), Touch (follows stroking speed), or Combo (quick tap = shock, sustained = gentle).',
     },
     saveParam: {
-      title: 'Save to apply',
-      body: 'After saving, changes hot-reload instantly and take effect without dropping the device connection.',
+      title: 'Saved automatically',
+      body: 'Changes are saved automatically and hot-reload instantly, without dropping the device connection.',
     },
     gotoStrength: {
       title: 'Step 2: Strength Settings',

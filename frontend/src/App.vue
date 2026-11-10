@@ -111,7 +111,8 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 's' || e.key === 'S') {
     e.preventDefault()
     const btn = document.querySelector<HTMLButtonElement>('.main .save-bar .btn-primary:not(:disabled), .main .btn-primary[data-save]:not(:disabled)')
-    btn?.click()
+    if (btn) btn.click()
+    else window.dispatchEvent(new Event('autosave-flush')) // auto-saving pages save now
     return
   }
   const n = Number(e.key)

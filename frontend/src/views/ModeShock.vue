@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { RotateCcw } from 'lucide-vue-next'
 import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
@@ -26,9 +27,10 @@ async function loadPresets() {
   presets.value = data.presets || []
 }
 
-const unsaved = useUnsaved(() => ({ ch: ch.value, duration: duration.value, wavePreset: wavePreset.value, waveScale: waveScale.value, followValue: followValue.value, minStrength: minStrength.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+const unsaved = useUnsaved(() => ({ ch: ch.value, duration: duration.value, wavePreset: wavePreset.value, waveScale: waveScale.value, followValue: followValue.value, minStrength: minStrength.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }), { save: save })
 
 async function load() {
+  unsaved.markLoading()
   const data = await api(`/api/v1/mode_config/${ch.value}/shock`)
   const cfg = data.config || {}
   duration.value = cfg.duration ?? 2
@@ -50,8 +52,9 @@ async function save() {
     min_strength: minStrength.value,
     trigger_range: { bottom: triggerBottom.value, top: triggerTop.value },
   })
-  msg.value = data.success ? t('common.saved') : t('common.saveFailed')
-  setTimeout(() => msg.value = '', 3000)
+  // Success is shown by the auto-save indicator; only report failures.
+  msg.value = data.success ? '' : t('common.saveFailed')
+  if (!data.success) setTimeout(() => msg.value = '', 3000)
   if (data.success) unsaved.markClean()
 }
 
@@ -137,9 +140,8 @@ onMounted(() => { loadPresets(); load() })
 
 
     <div class="save-bar sticky">
-      <button class="btn btn-primary" @click="save">{{ t('common.save') }}</button>
+      <AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" />
       <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
-      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg">{{ msg }}</span>
     </div>
   </div>

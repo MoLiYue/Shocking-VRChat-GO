@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import AppSelect from '@/components/AppSelect.vue'
-import { Check, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-vue-next'
+import { Check, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
 import { computed, reactive, ref, onMounted, onActivated } from 'vue'
 import { api } from '@/api'
 import { useI18n } from '@/i18n'
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { toast } from '@/dialog'
 
 const { t } = useI18n()
@@ -42,7 +43,9 @@ const rowErrors = ref<Record<string, string>>({})
 const modeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
 
 // Dirty = differs from what was last loaded/saved (not "was touched").
-const unsaved = useUnsaved(() => CHANNELS.map((c) => ({ p: st[c].params, m: st[c].defaultMode })))
+// Auto-saved: add / remove / toggle / confirmed edits / mode changes apply
+// live shortly after the change. An open edit row is saved once confirmed.
+const unsaved = useUnsaved(() => CHANNELS.map((c) => ({ p: st[c].params, m: st[c].defaultMode })), { save: () => save(false) })
 
 function modeLabel(mode: string) {
   const key = 'params.mode' + mode.charAt(0).toUpperCase() + mode.slice(1)
@@ -62,6 +65,7 @@ function normalize(c: Ch, raw: string, skipIndex: number | null): { path?: strin
 }
 
 async function load() {
+  unsaved.markLoading()
   rowErrors.value = {}
   for (const c of CHANNELS) {
     const d = await api(`/api/v1/params/${c}`)
@@ -122,9 +126,10 @@ const ERR_KEYS: Record<string, string> = {
   empty_path: 'params.errEmpty', bad_path: 'params.errBadPath', bad_mode: 'params.errBadMode', duplicate: 'params.paramExists',
 }
 
-async function save() {
-  // An open edit row is part of what the user expects to save.
-  for (const c of CHANNELS) if (!confirmEdit(c)) return
+async function save(manual = true) {
+  // On an explicit save (Ctrl+S) an open edit row is part of what the user
+  // expects to save; auto-save leaves it open.
+  if (manual) for (const c of CHANNELS) if (!confirmEdit(c)) return
   saving.value = true
   rowErrors.value = {}
   try {
@@ -136,7 +141,7 @@ async function save() {
     if (resp.ok && data.success) {
       for (const c of CHANNELS) if (data[c]) st[c].params = data[c]
       unsaved.markClean()
-      toast(t('params.appliedLive'), 'success')
+      if (manual) toast(t('params.appliedLive'), 'success')
     } else if (Array.isArray(data.errors)) {
       for (const e of data.errors) rowErrors.value[`${e.channel}:${e.index}`] = t(ERR_KEYS[e.code] || 'common.saveFailed')
       toast(t('params.fixErrors', { n: data.errors.length }), 'error')
@@ -251,13 +256,7 @@ onActivated(async () => {
     <p class="hint">{{ t('params.addHint') }}</p>
 
     <div class="save-bar sticky">
-      <button class="btn btn-primary" data-tour="param-save" :disabled="saving || !unsaved.dirty.value" @click="save">
-        {{ saving ? t('params.saving') : t('common.save') }}
-      </button>
-      <button class="btn btn-ghost" :disabled="saving || !unsaved.dirty.value" @click="load">
-        <RotateCcw :size="14" />{{ t('params.undoChanges') }}
-      </button>
-      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
+      <span data-tour="param-save"><AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" /></span>
       <span class="save-hint">{{ t('params.liveHint') }}</span>
     </div>
   </div>

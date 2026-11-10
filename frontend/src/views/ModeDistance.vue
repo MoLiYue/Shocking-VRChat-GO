@@ -2,6 +2,7 @@
 import AppSelect from '@/components/AppSelect.vue'
 import { canvasFont, themeColor } from '@/canvasFont'
 import { useUnsaved } from '@/unsaved'
+import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { RotateCcw, X } from 'lucide-vue-next'
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { api, apiPost, apiDelete } from '@/api'
@@ -49,9 +50,14 @@ async function loadPresets() {
   presets.value = data.presets || []
 }
 
-const unsaved = useUnsaved(() => ({ ch: ch.value, freqMs: freqMs.value, wavePreset: wavePreset.value, waveScale: waveScale.value, textureFloor: textureFloor.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }))
+const unsaved = useUnsaved(() => ({ ch: ch.value, freqMs: freqMs.value, wavePreset: wavePreset.value, waveScale: waveScale.value, textureFloor: textureFloor.value, sampleStep: sampleStep.value, advanceSamples: advanceSamples.value, envelopeCurve: envelopeCurve.value, triggerBottom: triggerBottom.value, triggerTop: triggerTop.value }), { save: saveDistance })
+// The curve editor saves itself too, to the curve whose points are shown
+// (curveKey), so switching the parameter never writes them to the new one.
+const curveKey = ref('')
+const curveUnsaved = useUnsaved(() => ({ key: curveKey.value, points: points.value }), { save: saveCurve })
 
 async function loadDistance() {
+  unsaved.markLoading()
   const data = await api(`/api/v1/mode_config/${ch.value}/distance`)
   const cfg = data.config || {}
   freqMs.value = cfg.freq_ms ?? 10
@@ -77,8 +83,8 @@ async function saveDistance() {
     wave_envelope_curve: envelopeCurve.value,
     trigger_range: { bottom: triggerBottom.value, top: triggerTop.value },
   })
-  distMsg.value = data.success ? t('common.saved') : t('common.saveFailed')
-  setTimeout(() => distMsg.value = '', 3000)
+  distMsg.value = data.success ? '' : t('common.saveFailed')
+  if (!data.success) setTimeout(() => distMsg.value = '', 3000)
   if (data.success) unsaved.markClean()
 }
 
@@ -124,24 +130,29 @@ function paramLabel(key: string): string {
 
 async function loadCurve() {
   if (!activeParam.value) return
+  await curveUnsaved.flush() // save edits of the previously shown curve first
+  curveUnsaved.markLoading()
+  curveKey.value = activeParam.value
   const data = await api(`/api/v1/curve/${encodeURIComponent(activeParam.value)}`)
   points.value = data.points || PRESETS.relu
   sortPoints()
+  curveUnsaved.markClean()
   await nextTick()
   draw()
   curveMsg.value = ''
 }
 
 async function saveCurve() {
-  if (!activeParam.value) return
-  const data = await apiPost(`/api/v1/curve/${encodeURIComponent(activeParam.value)}`, { points: points.value })
-  curveMsg.value = data.success ? t('common.saved') : t('common.saveFailed')
+  if (!curveKey.value) return
+  const data = await apiPost(`/api/v1/curve/${encodeURIComponent(curveKey.value)}`, { points: points.value })
+  if (data.success) curveUnsaved.markClean()
+  else { curveMsg.value = t('common.saveFailed'); setTimeout(() => curveMsg.value = '', 3000) }
   await loadCurveList()
-  setTimeout(() => curveMsg.value = '', 3000)
 }
 
 async function deleteCurve() {
   if (!activeParam.value) return
+  curveUnsaved.markLoading() // pending edits are discarded by the reset
   await apiDelete(`/api/v1/curve/${encodeURIComponent(activeParam.value)}`)
   curveMsg.value = t('modeDistance.curveResetDone')
   await loadCurveList()
@@ -380,9 +391,8 @@ onUnmounted(() => window.removeEventListener('resize', draw))
     </div>
 
     <div class="save-bar">
-      <button class="btn btn-primary" @click="saveDistance">{{ t('modeDistance.saveDistance') }}</button>
+      <AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" />
       <button class="btn btn-ghost" @click="loadDistance"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
-      <span v-if="unsaved.dirty.value" class="unsaved-badge">{{ t('common.unsavedBadge') }}</span>
       <span class="msg">{{ distMsg }}</span>
     </div>
 
@@ -431,7 +441,7 @@ onUnmounted(() => window.removeEventListener('resize', draw))
           </div>
         </div>
         <div class="actions">
-          <button class="btn btn-primary" @click="saveCurve">{{ t('modeDistance.curveSave') }}</button>
+          <AutoSaveStatus :state="curveUnsaved.state.value" @retry="curveUnsaved.flush()" />
           <button class="btn btn-ghost" @click="loadCurve"><RotateCcw :size="14" />{{ t('common.reload') }}</button>
           <button class="btn btn-ghost btn-ghost-danger" @click="deleteCurve">{{ t('modeDistance.curveReset') }}</button>
         </div>
