@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vu
 import { useRoute, useRouter } from 'vue-router'
 import {
   LayoutDashboard, SlidersHorizontal, Plug, Gamepad2, Zap, Ruler, Hand,
-  Shuffle, FlaskConical, ScrollText, Disc, Activity, Bug, MessageSquare, Settings, Languages, Power,
+  Shuffle, FlaskConical, ScrollText, Disc, Activity, Bug, Puzzle, MessageSquare, Settings, Languages, Power,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Sun, Moon,
 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
@@ -49,6 +49,7 @@ const navItems = computed<NavItem[]>(() => [
   { path: '/params', label: t('nav.setup'), icon: SlidersHorizontal },
   { path: '/sps', label: t('nav.sps'), icon: Plug },
   { path: '/chatbox', label: t('nav.chatbox'), icon: MessageSquare },
+  { path: '/modules', label: t('nav.modules'), icon: Puzzle },
   {
     key: MODES_GROUP_KEY, label: t('nav.modes'), icon: Gamepad2,
     children: [

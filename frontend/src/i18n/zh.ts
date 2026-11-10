@@ -10,6 +10,7 @@ export default {
     strength: '强度设置',
     overlimit: '超限规则',
     debug: '调试',
+    modules: '模组',
     modes: '模式',
     modeShock: '电击',
     modeDistance: '距离',
@@ -533,6 +534,10 @@ export default {
     applied: '已导入；导入前的设置已备份为档案“{backup}”',
     backupHint: '导入前会自动把当前设置保存为一个档案，可在设置的“配置档案”中恢复。',
   },
+  modules: {
+    title: '模组',
+    desc: '可选的扩展功能，默认全部关闭，按需启用。',
+  },
   pulsoid: {
     title: 'Pulsoid 心率',
     optional: '可选功能',
@@ -541,6 +546,7 @@ export default {
     token: 'Access Token',
     tokenPlaceholder: '粘贴 Pulsoid Access Token',
     tokenSaved: '已保存 {hint}（输入新的 token 可替换）',
+    clearToken: '清除',
     tokenHint: '在 Pulsoid 网站创建 token（权限 data:heart_rate:read）：',
     range: '归一化范围',
     sendVR: '发送给 VRChat（兼容 VRCOSC 心率参数）',

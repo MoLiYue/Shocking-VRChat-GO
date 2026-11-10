@@ -64,9 +64,11 @@ onUnmounted(() => clearInterval(timer))
       <div class="field">
         <label>{{ t('pulsoid.token') }}</label>
         <div class="row">
-          <input v-model="token" type="password" autocomplete="off" class="grow"
+          <input v-model="token" type="password" autocomplete="off" spellcheck="false" class="grow token"
+            :aria-label="t('pulsoid.token')" @keyup.enter="token.trim() && save()"
             :placeholder="st?.has_token ? t('pulsoid.tokenSaved', { hint: st.token_hint }) : t('pulsoid.tokenPlaceholder')">
-          <button class="btn btn-ghost" :disabled="busy || !token.trim()" @click="save()">{{ t('common.save') }}</button>
+          <button class="btn btn-primary" :disabled="busy || !token.trim()" @click="save()">{{ t('common.save') }}</button>
+          <button v-if="st?.has_token" class="btn btn-ghost" :disabled="busy" @click="save({ clear_token: true })">{{ t('pulsoid.clearToken') }}</button>
         </div>
         <p class="hint">
           {{ t('pulsoid.tokenHint') }}
@@ -110,7 +112,9 @@ onUnmounted(() => clearInterval(timer))
 .field > label:not(.toggle-row):not(.inline) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-1); font-weight: 500; }
 .toggle-row { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); cursor: pointer; }
 .row { display: flex; align-items: center; gap: var(--sp-2); }
-.grow { flex: 1; min-width: 0; font-family: var(--font-mono); }
+.grow { flex: 1; min-width: 0; }
+.token { font-family: var(--font-mono); letter-spacing: 0.05em; }
+.token::placeholder { font-family: var(--font); letter-spacing: normal; }
 .inline { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); color: var(--text-label); }
 .num { width: 72px; text-align: center; }
 .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }

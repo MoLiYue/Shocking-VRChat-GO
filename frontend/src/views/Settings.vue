@@ -3,7 +3,6 @@ import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import { openShareExport, shareState } from '@/share'
 import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
-import PulsoidSettings from '@/components/PulsoidSettings.vue'
 import { themePref, setTheme, type ThemePref } from '@/theme'
 import { Check, CircleCheck, CircleX, Compass, RotateCcw, ShieldCheck } from 'lucide-vue-next'
 import { confirmDialog } from '@/dialog'
@@ -522,7 +521,6 @@ onUnmounted(() => { stopProgressPolling() })
         </div>
       </section>
 
-      <PulsoidSettings />
 
       <section class="card">
         <h2>{{ t('settings.monitorTitle') }}</h2>

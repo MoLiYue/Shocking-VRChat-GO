@@ -10,6 +10,7 @@ export default {
     strength: 'Strength',
     overlimit: 'Overlimit Rules',
     debug: 'Debug',
+    modules: 'Modules',
     modes: 'Modes',
     modeShock: 'Shock',
     modeDistance: 'Distance',
@@ -533,6 +534,10 @@ export default {
     applied: 'Imported; your previous setup was saved as profile "{backup}"',
     backupHint: 'Your current setup is saved as a profile before importing (restore it under Settings > Profiles).',
   },
+  modules: {
+    title: 'Modules',
+    desc: 'Optional extensions, all off by default; enable what you need.',
+  },
   pulsoid: {
     title: 'Pulsoid heart rate',
     optional: 'optional',
@@ -541,6 +546,7 @@ export default {
     token: 'Access token',
     tokenPlaceholder: 'Paste your Pulsoid access token',
     tokenSaved: 'Saved {hint} (enter a new token to replace it)',
+    clearToken: 'Clear',
     tokenHint: 'Create a token on Pulsoid (scope data:heart_rate:read):',
     range: 'Normalisation range',
     sendVR: 'Send to VRChat (VRCOSC-compatible heart rate parameters)',

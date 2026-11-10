@@ -24,6 +24,7 @@ const router = createRouter({
     { path: '/wave-test', component: () => import('./views/WaveTest.vue') },
     { path: '/logs', component: () => import('./views/Logs.vue') },
     { path: '/chatbox', component: () => import('./views/Chatbox.vue') },
+    { path: '/modules', component: () => import('./views/Modules.vue') },
     // Legacy redirects
     { path: '/curve', redirect: '/mode/distance' },
     { path: '/combo', redirect: '/mode/combo' },
