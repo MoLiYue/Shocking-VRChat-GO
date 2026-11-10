@@ -471,8 +471,7 @@ func (a *App) ogbHeartbeat(ctx context.Context) {
 		cfg := config.AsMap(a.Cfg.Get("sps"))
 		interval := config.Clamp(config.Float(cfg["ogb_enabled_interval"], 5.0), 1, 60)
 		if config.Bool(cfg["enabled"], true) && config.Bool(cfg["ogb_enabled_heartbeat"], true) {
-			host := config.Str(cfg["ogb_target_host"], "127.0.0.1")
-			port := config.Int(cfg["ogb_target_port"], 9000)
+			host, port := a.oscSendTarget()
 			if port >= 1 && port <= 65535 {
 				target := fmt.Sprintf("%s:%d", host, port)
 				if client == nil || target != lastTarget {

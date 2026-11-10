@@ -122,3 +122,21 @@ func TestOverlimitMaxDropped(t *testing.T) {
 		t.Fatal("overlimit_max not removed")
 	}
 }
+
+// The per-feature OSC send targets became one shared osc.send_host/port.
+func TestMigrateOSCSendTarget(t *testing.T) {
+	adv := M{"chatbox": M{"target_host": "127.0.0.1", "target_port": 9000, "enabled": true},
+		"sps": M{"ogb_target_host": "192.168.1.9", "ogb_target_port": 9100}}
+	MigrateOSCSendTarget(adv)
+	if Get(adv, "osc", "send_host") != "192.168.1.9" || Int(Get(adv, "osc", "send_port"), 0) != 9100 {
+		t.Fatalf("non-default target should win: %v", adv["osc"])
+	}
+	if Get(adv, "chatbox", "target_host") != nil || Get(adv, "sps", "ogb_target_port") != nil || Get(adv, "chatbox", "enabled") != true {
+		t.Fatalf("old keys not removed / others touched: %v", adv)
+	}
+	keep := M{"osc": M{"send_host": "10.0.0.2", "send_port": 9002}, "chatbox": M{"target_host": "1.2.3.4", "target_port": 1}}
+	MigrateOSCSendTarget(keep)
+	if Get(keep, "osc", "send_host") != "10.0.0.2" {
+		t.Fatal("existing shared target must not be overwritten")
+	}
+}

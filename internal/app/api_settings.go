@@ -49,6 +49,11 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 			if v, ok := o["listen_host"]; ok {
 				set("osc", "listen_host", v, "osc")
 			}
+			if o["send_host"] != nil || o["send_port"] != nil { // no restart needed
+				if err := a.setOSCSendTarget(adv, o["send_host"], o["send_port"]); err != nil {
+					bad = err
+				}
+			}
 		}
 		if o := config.AsMap(data["ws"]); o != nil {
 			if v, ok := o["listen_port"]; ok {
@@ -565,6 +570,7 @@ func (a *App) apiSPSGet(*http.Request) (any, error) {
 		}
 		ogb[ch] = paths
 	}
+	cfg["ogb_target_host"], cfg["ogb_target_port"] = a.oscSendTarget() // read-only (Settings)
 	return map[string]any{"sps": cfg, "ogb_params": ogb}, nil
 }
 
@@ -591,24 +597,12 @@ func (a *App) apiSPSSet(r *http.Request) (any, error) {
 			}
 			s["ogb_enabled_interval"] = config.Clamp(f, 1, 60)
 		}
-		if v, ok := data["ogb_target_host"]; ok {
-			h := strings.TrimSpace(config.Str(v, ""))
-			if h == "" {
-				h = "127.0.0.1"
-			}
-			s["ogb_target_host"] = h
-		}
-		if v, ok := data["ogb_target_port"]; ok {
-			p, ok := config.ToInt(v)
-			if !ok {
-				bad = httpErr(400, "ogb_target_port must be an integer")
+		// compatibility: the old per-feature target now sets the shared one
+		if data["ogb_target_host"] != nil || data["ogb_target_port"] != nil {
+			if err := a.setOSCSendTarget(adv, data["ogb_target_host"], data["ogb_target_port"]); err != nil {
+				bad = err
 				return
 			}
-			if p < 1 || p > 65535 {
-				bad = httpErr(400, "ogb_target_port out of range")
-				return
-			}
-			s["ogb_target_port"] = p
 		}
 		out = config.CopyMap(s)
 	})

@@ -388,8 +388,7 @@ func (c *chatboxSender) loop(done chan struct{}) {
 			}
 			continue
 		}
-		host := config.Str(cfg["target_host"], "127.0.0.1")
-		port := config.Int(cfg["target_port"], 9000)
+		host, port := a.oscSendTarget()
 		interval := config.Float(cfg["interval_seconds"], 3.0)
 		if interval < 0.5 {
 			interval = 0.5
@@ -444,10 +443,13 @@ func (a *App) StartChatboxIfEnabled() {
 }
 
 func (a *App) apiChatboxGet(*http.Request) (any, error) {
-	if m := config.AsMap(a.Cfg.Get("chatbox")); m != nil {
-		return m, nil
+	m := config.AsMap(a.Cfg.Get("chatbox"))
+	if m == nil {
+		m = config.AsMap(config.DefaultAdvanced()["chatbox"])
 	}
-	return config.DefaultAdvanced()["chatbox"], nil
+	// read-only: the target is the shared OSC send target (Settings)
+	m["target_host"], m["target_port"] = a.oscSendTarget()
+	return m, nil
 }
 
 func (a *App) apiChatboxSet(r *http.Request) (any, error) {
@@ -456,20 +458,15 @@ func (a *App) apiChatboxSet(r *http.Request) (any, error) {
 		return nil, err
 	}
 	var out config.M
+	var bad error
 	a.Cfg.Write(func(adv, _ config.M) {
 		c := config.Sub(adv, true, "chatbox")
 		if v, ok := data["enabled"]; ok {
 			c["enabled"] = config.Bool(v, false)
 		}
-		if v, ok := data["target_host"]; ok {
-			h := strings.TrimSpace(config.Str(v, ""))
-			if h == "" {
-				h = "127.0.0.1"
-			}
-			c["target_host"] = h
-		}
-		if v, ok := data["target_port"]; ok {
-			c["target_port"] = config.Int(v, 9000)
+		// compatibility: the old per-feature target now sets the shared one
+		if data["target_host"] != nil || data["target_port"] != nil {
+			bad = a.setOSCSendTarget(adv, data["target_host"], data["target_port"])
 		}
 		if v, ok := data["interval_seconds"]; ok {
 			f := config.Float(v, 3.0)
@@ -489,6 +486,9 @@ func (a *App) apiChatboxSet(r *http.Request) (any, error) {
 		}
 		out = config.CopyMap(c)
 	})
+	if bad != nil {
+		return nil, bad
+	}
 	if err := a.Cfg.Save(); err != nil {
 		return nil, err
 	}
@@ -505,8 +505,7 @@ func (a *App) apiChatboxTest(r *http.Request) (any, error) {
 		return nil, err
 	}
 	msg := config.Str(data["message"], "Shocking VRChat test ⚡")
-	host := config.Str(data["target_host"], config.Str(a.Cfg.Get("chatbox", "target_host"), "127.0.0.1"))
-	port := config.Int(data["target_port"], config.Int(a.Cfg.Get("chatbox", "target_port"), 9000))
+	host, port := a.oscSendTarget()
 	if err := osc.SendOnce(host, port, "/chatbox/input", msg, true, false); err != nil {
 		return map[string]any{"success": false, "error": err.Error()}, nil
 	}

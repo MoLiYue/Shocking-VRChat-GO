@@ -50,7 +50,7 @@ const previewMessage = computed(() => {
   return msg
 })
 
-const unsaved = useUnsaved(() => ({ enabled: enabled.value, targetHost: targetHost.value, targetPort: targetPort.value, intervalSeconds: intervalSeconds.value, sendNotification: sendNotification.value, triggerSfx: triggerSfx.value, messageTemplate: messageTemplate.value }), { save: save, delay: 1000 })
+const unsaved = useUnsaved(() => ({ enabled: enabled.value, intervalSeconds: intervalSeconds.value, sendNotification: sendNotification.value, triggerSfx: triggerSfx.value, messageTemplate: messageTemplate.value }), { save: save, delay: 1000 })
 
 async function load() {
   unsaved.markLoading()
@@ -69,8 +69,6 @@ async function save() {
   try {
     const data = await apiPost('/api/v1/chatbox', {
       enabled: enabled.value,
-      target_host: targetHost.value,
-      target_port: targetPort.value,
       interval_seconds: intervalSeconds.value,
       send_notification: sendNotification.value,
       trigger_sfx: triggerSfx.value,
@@ -93,8 +91,6 @@ async function sendTest() {
   try {
     const data = await apiPost('/api/v1/chatbox/test', {
       message: previewMessage.value,
-      target_host: targetHost.value,
-      target_port: targetPort.value,
     })
     if (data.success) {
       testMsg.value = t('chatbox.testSent')
@@ -165,14 +161,10 @@ onMounted(load)
       <h2>{{ t('chatbox.oscTitle') }}</h2>
       <div class="osc-grid">
         <div class="field">
-          <label>{{ t('chatbox.targetHost') }}</label>
-          <input type="text" v-model="targetHost" />
-          <p class="hint">{{ t('chatbox.targetHostHint') }}</p>
-        </div>
-        <div class="field">
-          <label>{{ t('chatbox.targetPort') }}</label>
-          <input type="number" v-model.number="targetPort" />
-          <p class="hint">{{ t('chatbox.targetPortHint') }}</p>
+          <label>{{ t('common.oscSendTarget') }}</label>
+          <router-link to="/settings" class="readonly-target" :title="t('common.oscSendTargetHint')">
+            <span class="mono">{{ targetHost }}:{{ targetPort }}</span><span class="edit-link">{{ t('common.changeInSettings') }} →</span>
+          </router-link>
         </div>
         <div class="field">
           <label>{{ t('chatbox.interval') }}</label>
@@ -218,6 +210,10 @@ onMounted(load)
 </template>
 
 <style scoped>
+.readonly-target { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border); border-radius: var(--radius-md); color: var(--text); text-decoration: none; }
+.readonly-target:hover { border-color: var(--border-hover); background: var(--bg-hover); text-decoration: none; }
+.readonly-target .mono { font-family: var(--font-mono); font-weight: 600; }
+.readonly-target .edit-link { font-size: var(--text-xs); color: var(--text-secondary); }
 .field { margin-bottom: var(--sp-4); }
 .field:last-child { margin-bottom: 0; }
 .field label:not(.toggle-row) { display: block; font-size: var(--text-sm); color: var(--text-label); margin-bottom: var(--sp-2); font-weight: 500; }

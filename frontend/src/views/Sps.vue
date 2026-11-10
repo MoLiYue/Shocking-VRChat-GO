@@ -36,7 +36,7 @@ function flash(target: 'save' | 'add', text: string, isErr: boolean) {
   setTimeout(() => { if (target === 'save') msg.value = ''; else addMsg.value = '' }, 3000)
 }
 
-const unsaved = useUnsaved(() => ({ enabled: enabled.value, heartbeat: heartbeat.value, interval: interval.value, targetHost: targetHost.value, targetPort: targetPort.value }), { save: save, delay: 1000 })
+const unsaved = useUnsaved(() => ({ enabled: enabled.value, heartbeat: heartbeat.value, interval: interval.value }), { save: save, delay: 1000 })
 
 async function load() {
   unsaved.markLoading()
@@ -70,8 +70,6 @@ async function save() {
       enabled: enabled.value,
       ogb_enabled_heartbeat: heartbeat.value,
       ogb_enabled_interval: interval.value,
-      ogb_target_host: targetHost.value,
-      ogb_target_port: targetPort.value,
     })
     if (data.success) unsaved.markClean()
     else flash('save', t('common.saveFailed'), true)
@@ -199,13 +197,10 @@ onUnmounted(stopZones)
       </div>
       <div class="osc-grid">
         <div class="field">
-          <label>{{ t('sps.targetHost') }}</label>
-          <input type="text" v-model="targetHost" />
-        </div>
-        <div class="field">
-          <label>{{ t('sps.targetPort') }}</label>
-          <input type="number" v-model.number="targetPort" min="1" max="65535" />
-          <p class="hint">{{ t('sps.targetPortHint') }}</p>
+          <label>{{ t('common.oscSendTarget') }}</label>
+          <router-link to="/settings" class="readonly-target" :title="t('common.oscSendTargetHint')">
+            <span class="mono">{{ targetHost }}:{{ targetPort }}</span><span class="edit-link">{{ t('common.changeInSettings') }} →</span>
+          </router-link>
         </div>
         <div class="field">
           <label>{{ t('sps.interval') }}</label>
@@ -234,6 +229,10 @@ onUnmounted(stopZones)
 </template>
 
 <style scoped>
+.readonly-target { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border); border-radius: var(--radius-md); color: var(--text); text-decoration: none; }
+.readonly-target:hover { border-color: var(--border-hover); background: var(--bg-hover); text-decoration: none; }
+.readonly-target .mono { font-family: var(--font-mono); font-weight: 600; }
+.readonly-target .edit-link { font-size: var(--text-xs); color: var(--text-secondary); }
 .osc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

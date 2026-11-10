@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -176,6 +177,38 @@ func (a *App) limitsFromSettings() device.Limits {
 }
 
 func (a *App) refreshLimits() { a.Hub.RefreshLimits(a.limitsFromSettings()) }
+
+// oscSendTarget is where OSC messages for VRChat go (chatbox, OGB heartbeat).
+func (a *App) oscSendTarget() (string, int) {
+	host := strings.TrimSpace(config.Str(a.Cfg.Get("osc", "send_host"), "127.0.0.1"))
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return host, config.ClampInt(config.Int(a.Cfg.Get("osc", "send_port"), 9000), 1, 65535)
+}
+
+// setOSCSendTarget validates and stores the shared target (caller saves).
+func (a *App) setOSCSendTarget(adv config.M, host, port any) error {
+	o := config.Sub(adv, true, "osc")
+	if host != nil {
+		h := strings.TrimSpace(config.Str(host, ""))
+		if h == "" {
+			h = "127.0.0.1"
+		}
+		o["send_host"] = h
+	}
+	if port != nil {
+		p, ok := config.ToInt(port)
+		if !ok {
+			return httpErr(400, "port must be an integer")
+		}
+		if p < 1 || p > 65535 {
+			return httpErr(400, "port out of range")
+		}
+		o["send_port"] = p
+	}
+	return nil
+}
 
 // UIThemeDark reports whether the last UI theme was dark.
 func (a *App) UIThemeDark() bool {

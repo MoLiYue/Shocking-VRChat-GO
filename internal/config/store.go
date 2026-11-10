@@ -115,6 +115,10 @@ func DefaultAdvanced() M {
 		"osc": M{
 			"listen_host": "127.0.0.1",
 			"listen_port": 9001,
+
+			// Where we send OSC to VRChat (chatbox, OGB heartbeat).
+			"send_host": "127.0.0.1",
+			"send_port": 9000,
 		},
 		"web_server": M{
 			"listen_host": "0.0.0.0",
@@ -142,8 +146,6 @@ func DefaultAdvanced() M {
 		},
 		"chatbox": M{
 			"enabled":           false,
-			"target_host":       "127.0.0.1",
-			"target_port":       9000,
 			"interval_seconds":  3.0,
 			"send_notification": true,
 			"trigger_sfx":       false,
@@ -159,8 +161,6 @@ func DefaultAdvanced() M {
 			"enabled":               true,
 			"ogb_enabled_heartbeat": true,
 			"ogb_enabled_interval":  5.0,
-			"ogb_target_host":       "127.0.0.1",
-			"ogb_target_port":       9000,
 		},
 	}
 }
@@ -305,6 +305,7 @@ func (s *Store) LoadFiles() (adv, basic M, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	MigrateOSCSendTarget(advRaw)
 	basic = AsMap(MergeDefaults(DefaultBasic(), basicRaw))
 	adv = AsMap(MergeDefaults(DefaultAdvanced(), advRaw))
 	SyncBasicIntoAdvanced(adv, basic)
@@ -467,4 +468,51 @@ func ShortID() string {
 	var b [4]byte
 	_, _ = rand.Read(b[:])
 	return fmt.Sprintf("%x", b)
+}
+
+// MigrateOSCSendTarget moves the per-feature OSC send targets (chatbox
+// target_host/port, sps ogb_target_host/port; removed in 0.7.17) into the
+// shared osc.send_host/send_port. A non-default old target wins.
+func MigrateOSCSendTarget(adv M) {
+	if adv == nil {
+		return
+	}
+	o := Sub(adv, true, "osc")
+	_, hasHost := o["send_host"]
+	_, hasPort := o["send_port"]
+	ch, sp := AsMap(adv["chatbox"]), AsMap(adv["sps"])
+	if !hasHost || !hasPort {
+		// first non-default old target wins, else the first one present
+		host, port := "", 0
+		for _, src := range []struct {
+			m      M
+			hk, pk string
+		}{{ch, "target_host", "target_port"}, {sp, "ogb_target_host", "ogb_target_port"}} {
+			h, p := Str(src.m[src.hk], ""), Int(src.m[src.pk], 0)
+			if h == "" && p == 0 {
+				continue
+			}
+			nonDefault := (h != "" && h != "127.0.0.1") || (p != 0 && p != 9000)
+			if host == "" || nonDefault {
+				host, port = h, p
+			}
+			if nonDefault {
+				break
+			}
+		}
+		if !hasHost && host != "" {
+			o["send_host"] = host
+		}
+		if !hasPort && port > 0 {
+			o["send_port"] = port
+		}
+	}
+	for _, m := range []M{ch, sp} {
+		if m != nil {
+			delete(m, "target_host")
+			delete(m, "target_port")
+			delete(m, "ogb_target_host")
+			delete(m, "ogb_target_port")
+		}
+	}
 }
