@@ -4,6 +4,7 @@ export default {
     lightMode: '切换到浅色模式',
     darkMode: '切换到深色模式',
     dashboard: 'Dashboard',
+    setup: '强度与参数',
     params: '参数管理',
     sps: 'SPS2 / OGB',
     strength: '强度设置',

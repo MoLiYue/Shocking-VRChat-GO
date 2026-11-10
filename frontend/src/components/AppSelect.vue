@@ -17,7 +17,9 @@ const props = withDefaults(defineProps<{
   searchable?: boolean | null
   disabled?: boolean
   mono?: boolean
-}>(), { placeholder: '', searchable: null, disabled: false, mono: false })
+  /** Compact trigger matching .btn-sm (toolbars, card headers). */
+  small?: boolean
+}>(), { placeholder: '', searchable: null, disabled: false, mono: false, small: false })
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: any): void; (e: 'change', v: any): void }>()
 
@@ -145,7 +147,7 @@ onBeforeUnmount(() => { open.value = false })
 </script>
 
 <template>
-  <div ref="root" class="app-select" :class="{ open, disabled, mono }">
+  <div ref="root" class="app-select" :class="{ open, disabled, mono, small }">
     <button
       ref="trigger"
       type="button"
@@ -218,7 +220,7 @@ onBeforeUnmount(() => { open.value = false })
 .sel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-value.placeholder { color: var(--text-muted); }
 .app-select.mono .sel-value, .sel-pop.mono .sel-opt-label { font-family: var(--font-mono); font-size: var(--text-xs); }
-.filter-select .sel-trigger, .edit-select .sel-trigger, .cond-op .sel-trigger { min-height: 30px; padding-left: var(--sp-3); font-size: var(--text-xs); border-radius: var(--radius-sm); }
+.app-select.small .sel-trigger, .filter-select .sel-trigger, .edit-select .sel-trigger, .cond-op .sel-trigger { min-height: 30px; padding-left: var(--sp-3); font-size: var(--text-xs); border-radius: var(--radius-sm); }
 .sel-chevron { flex-shrink: 0; color: var(--text-muted); transition: transform 160ms ease; }
 .app-select.open .sel-chevron { transform: rotate(180deg); color: var(--accent); }
 

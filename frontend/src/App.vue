@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  LayoutDashboard, SlidersHorizontal, Plug, Gauge, ShieldAlert, Gamepad2, Zap, Ruler, Hand,
+  LayoutDashboard, SlidersHorizontal, Plug, Gamepad2, Zap, Ruler, Hand,
   Shuffle, FlaskConical, ScrollText, Disc, Activity, MessageSquare, Settings, Languages, Power,
   PanelLeftClose, PanelLeftOpen, ChevronDown, Sun, Moon,
 } from 'lucide-vue-next'
@@ -44,10 +44,8 @@ const MODES_GROUP_KEY = 'nav.modes'
 
 const navItems = computed<NavItem[]>(() => [
   { path: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
-  { path: '/params', label: t('nav.params'), icon: SlidersHorizontal },
+  { path: '/params', label: t('nav.setup'), icon: SlidersHorizontal },
   { path: '/sps', label: t('nav.sps'), icon: Plug },
-  { path: '/strength', label: t('nav.strength'), icon: Gauge },
-  { path: '/overlimit-rules', label: t('nav.overlimit'), icon: ShieldAlert },
   {
     key: MODES_GROUP_KEY, label: t('nav.modes'), icon: Gamepad2,
     children: [
@@ -71,7 +69,6 @@ const expandedGroups = ref<Set<string>>(new Set([MODES_GROUP_KEY]))
 const TOUR_ANCHORS: Record<string, string> = {
   '/dashboard': 'nav-dashboard',
   '/params': 'nav-params',
-  '/strength': 'nav-strength',
 }
 
 function toggleGroup(key: string) {

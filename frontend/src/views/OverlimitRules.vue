@@ -3,11 +3,13 @@ import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
+// embedded: shown as a section of the combined setup page (Setup.vue)
+const props = defineProps<{ embedded?: boolean }>()
 
 interface CurvePoint { x: number; y: number }
 
@@ -118,6 +120,15 @@ function percentPreview(r: Rule): string {
   return chs.map(c => `${c} +${Math.min(200, Math.round(baseLimits.value[c] * (r.limit_boost || 0) / 100))}`).join(' · ')
 }
 
+async function loadLimits() {
+  try {
+    const l = await api('/api/v1/strength_limit')
+    baseLimits.value = { A: l.channel_a ?? 0, B: l.channel_b ?? 0 }
+  } catch {}
+}
+window.addEventListener('strength-limits-changed', loadLimits)
+onUnmounted(() => window.removeEventListener('strength-limits-changed', loadLimits))
+
 async function load() {
   unsaved.markLoading()
   try {
@@ -182,8 +193,10 @@ onMounted(load)
 
 <template>
   <div>
-    <h1 class="gradient-text page-title">{{ t('overlimit.title') }}</h1>
-    <p class="page-desc">{{ t('overlimit.desc') }}</p>
+    <template v-if="!props.embedded">
+      <h1 class="gradient-text page-title">{{ t('overlimit.title') }}</h1>
+      <p class="page-desc">{{ t('overlimit.desc') }}</p>
+    </template>
 
     <div class="status-bar">
       <span class="status-label">{{ t('overlimit.currentEffective') }}</span>

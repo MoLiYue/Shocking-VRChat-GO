@@ -4,6 +4,7 @@ export default {
     lightMode: 'Switch to light mode',
     darkMode: 'Switch to dark mode',
     dashboard: 'Dashboard',
+    setup: 'Strength & params',
     params: 'Parameters',
     sps: 'SPS2 / OGB',
     strength: 'Strength',

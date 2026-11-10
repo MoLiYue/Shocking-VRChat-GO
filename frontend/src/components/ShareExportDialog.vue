@@ -76,8 +76,8 @@ async function copyCode() {
         <button class="icon-action" :aria-label="t('common.cancel')" @click="shareState.exportOpen = false"><X :size="16" /></button>
       </div>
       <div class="form">
-        <label>{{ t('share.title') }}<input v-model="title" maxlength="60" :placeholder="t('share.cardDefaultTitle')"></label>
-        <label>{{ t('share.note') }}<input v-model="note" maxlength="300"></label>
+        <label>{{ t('share.title') }}<input v-model="title" type="text" maxlength="60" :placeholder="t('share.cardDefaultTitle')"></label>
+        <label>{{ t('share.note') }}<input v-model="note" type="text" maxlength="300"></label>
         <label class="chk"><input type="checkbox" v-model="withAvatar">{{ t('share.includeAvatar') }}</label>
         <p class="hint">{{ t('share.privacyHint') }}</p>
       </div>

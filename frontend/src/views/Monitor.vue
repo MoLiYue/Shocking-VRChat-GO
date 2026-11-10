@@ -7,6 +7,7 @@ import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 import { confirmDialog, toast } from '@/dialog'
 import { themeColor } from '@/canvasFont'
+import AppSelect from '@/components/AppSelect.vue'
 
 const { t, locale } = useI18n()
 
@@ -195,12 +196,17 @@ onUnmounted(() => {
       </span>
       <div class="prefixes">
         <span class="lbl">{{ t('monitor.prefixes') }}</span>
-        <span v-for="(p, i) in prefixes" :key="p" class="chip">
+        <span v-for="(p, i) in prefixes" :key="p" class="chip" :title="p">
           {{ short(p) || p }}
-          <button class="chip-x" :aria-label="t('common.delete')" @click="removePrefix(i)"><X :size="12" /></button>
+          <button class="chip-x" :aria-label="t('common.delete')" :title="t('common.delete')" @click="removePrefix(i)"><X :size="12" /></button>
         </span>
-        <input v-model="newPrefix" class="prefix-input" placeholder="pcs/ · OGB/ · Shock/" @keyup.enter="addPrefix">
-        <button class="btn btn-ghost btn-sm" @click="addPrefix"><Plus :size="14" />{{ t('common.add') }}</button>
+        <div class="add-form">
+          <div class="add-path">
+            <span class="prefix-label">/avatar/parameters/</span>
+            <input v-model="newPrefix" type="text" class="add-input" placeholder="pcs/" :aria-label="t('monitor.prefixes')" @keyup.enter="addPrefix">
+          </div>
+          <button class="btn btn-ghost" :disabled="!newPrefix.trim()" @click="addPrefix"><Plus :size="15" />{{ t('common.add') }}</button>
+        </div>
       </div>
       <div class="actions">
         <label class="toggle-row"><input type="checkbox" v-model="live">{{ t('monitor.live') }}</label>
@@ -210,17 +216,14 @@ onUnmounted(() => {
     </section>
 
     <div class="toolbar">
-      <div class="search"><Search :size="14" /><input v-model="q" :placeholder="t('monitor.search')"></div>
+      <div class="search"><Search :size="14" class="search-icon" /><input v-model="q" type="search" :placeholder="t('monitor.search')" :aria-label="t('monitor.search')"></div>
       <div class="cats">
         <button :class="{ active: !cat }" @click="cat = ''">{{ t('monitor.all') }} ({{ params.length }})</button>
         <button v-for="(n, c) in categories" :key="c" :class="{ active: cat === c }" @click="cat = String(c)">{{ String(c).toUpperCase() }} ({{ n }})</button>
       </div>
-      <select v-model="sortBy" class="sort" :aria-label="t('monitor.sort')">
-        <option value="last">{{ t('monitor.sortLast') }}</option>
-        <option value="first">{{ t('monitor.sortFirst') }}</option>
-        <option value="name">{{ t('monitor.sortName') }}</option>
-        <option value="changes">{{ t('monitor.sortChanges') }}</option>
-      </select>
+      <AppSelect v-model="sortBy" small class="sort" :aria-label="t('monitor.sort')" :options="[
+        { value: 'last', label: t('monitor.sortLast') }, { value: 'first', label: t('monitor.sortFirst') },
+        { value: 'name', label: t('monitor.sortName') }, { value: 'changes', label: t('monitor.sortChanges') }]" />
     </div>
 
     <div class="layout">
@@ -294,18 +297,23 @@ onUnmounted(() => {
 .toggle-row { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); color: var(--text-label); cursor: pointer; }
 .prefixes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex: 1; min-width: 300px; }
 .lbl { font-size: var(--text-sm); color: var(--text-muted); }
-.chip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 8px; border-radius: var(--radius-full); background: var(--bg-tertiary); font-family: var(--font-mono); font-size: var(--text-xs); }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--bg-tertiary); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text); }
 .chip-x { display: inline-flex; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; }
 .chip-x:hover { color: var(--danger); }
-.prefix-input { width: 180px; font-size: var(--text-sm); }
+/* same input group as "add parameter" on the parameter page */
+.add-form { display: flex; gap: var(--sp-2); align-items: center; }
+.add-path { display: flex; min-width: 0; }
+.prefix-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; background: var(--bg-tertiary); padding: var(--sp-2); border-radius: var(--radius-sm) 0 0 var(--radius-sm); border: 1px solid var(--border); border-right: none; display: flex; align-items: center; }
+.add-input { width: 160px; padding: var(--sp-2) var(--sp-3); border-radius: 0 var(--radius-md) var(--radius-md) 0; font-family: var(--font-mono); font-size: var(--text-xs); }
 .actions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
-.search { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-muted); }
-.search input { border: none; background: transparent; width: 240px; }
+.search { position: relative; display: flex; align-items: center; }
+.search-icon { position: absolute; left: 10px; color: var(--text-muted); pointer-events: none; }
+.search input { width: 260px; padding: var(--sp-2) var(--sp-3) var(--sp-2) 30px; font-size: var(--text-sm); }
 .cats { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .cats button { padding: 2px 10px; border: 1px solid var(--border); border-radius: var(--radius-full); background: transparent; color: var(--text-muted); cursor: pointer; font-size: var(--text-xs); }
 .cats button.active { border-color: var(--accent); color: var(--text); background: var(--bg-active); }
-.sort { margin-left: auto; font-size: var(--text-sm); }
+.sort { margin-left: auto; width: 150px; min-width: 0; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-4); align-items: start; }
 .table-card { padding: 0; overflow: auto; max-height: calc(100vh - 320px); }
 table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }

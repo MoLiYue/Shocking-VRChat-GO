@@ -29,8 +29,7 @@ export const TOUR_STEPS: TourStep[] = [
   { id: 'add-param', target: 'param-add', route: '/params', title: 'tour.addParam.title', body: 'tour.addParam.body' },
   { id: 'pick-mode', target: 'param-mode-select', route: '/params', title: 'tour.pickMode.title', body: 'tour.pickMode.body' },
   { id: 'save-param', target: 'param-save', route: '/params', title: 'tour.saveParam.title', body: 'tour.saveParam.body' },
-  { id: 'goto-strength', target: 'nav-strength', title: 'tour.gotoStrength.title', body: 'tour.gotoStrength.body' },
-  { id: 'set-strength', target: 'strength-slider', route: '/strength', title: 'tour.setStrength.title', body: 'tour.setStrength.body', safety: 'tour.setStrength.safety' },
+  { id: 'set-strength', target: 'strength-slider', route: '/params', title: 'tour.setStrength.title', body: 'tour.setStrength.body', safety: 'tour.setStrength.safety' },
   { id: 'goto-qr', target: 'nav-dashboard', title: 'tour.gotoQr.title', body: 'tour.gotoQr.body' },
   { id: 'scan-qr', target: 'qr-code', route: '/dashboard', title: 'tour.scanQr.title', body: 'tour.scanQr.body' },
   { id: 'finish', target: 'dashboard-status', route: '/dashboard', title: 'tour.finish.title', body: 'tour.finish.body', safety: 'tour.finish.safety', safetyLink: 'tour.finish.safetyLink' },
@@ -126,6 +125,10 @@ export function useTour() {
     // otherwise a stale hit/timeout would clobber the current step's rect.
     if (myGen !== resolveGeneration) return
     if (el) {
+      // Targets can be further down a long page (combined setup page).
+      el.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior })
+      await new Promise<void>((r) => requestAnimationFrame(() => r()))
+      if (myGen !== resolveGeneration) return
       const rect = el.getBoundingClientRect()
       targetRect.value = {
         top: rect.top,

@@ -6,6 +6,8 @@ import { useI18n } from '@/i18n'
 import { confirmDialog } from '@/dialog'
 
 const { t } = useI18n()
+// embedded: shown as a section of the combined setup page (Setup.vue)
+const props = defineProps<{ embedded?: boolean }>()
 
 const limitA = ref(5)
 const limitB = ref(5)
@@ -60,6 +62,8 @@ async function save() {
   })
   if (data.success) {
     Object.assign(saved, current())
+    // same page: overlimit percent previews follow the new limits
+    window.dispatchEvent(new Event('strength-limits-changed'))
     msg.value = t('common.saved')
     msgType.value = 'ok'
   } else {
@@ -94,8 +98,10 @@ onMounted(load)
 
 <template>
   <div>
-    <h1 class="gradient-text page-title">{{ t('strength.title') }}</h1>
-    <p class="page-desc">{{ t('strength.desc') }}</p>
+    <template v-if="!props.embedded">
+      <h1 class="gradient-text page-title">{{ t('strength.title') }}</h1>
+      <p class="page-desc">{{ t('strength.desc') }}</p>
+    </template>
 
     <div class="recommend-banner">
       <Lightbulb class="recommend-icon" :size="18" />
@@ -148,7 +154,7 @@ onMounted(load)
       </ul>
       <h3 style="margin-top:var(--sp-4)">{{ t('strength.overlimitTitle') }}</h3>
       <ul>
-        <li><router-link to="/overlimit-rules">{{ t('strength.overlimit1') }}</router-link></li>
+        <li><router-link :to="props.embedded ? { path: '/params', hash: '#overlimit' } : '/overlimit-rules'">{{ t('strength.overlimit1') }}</router-link></li>
         <li>{{ t('strength.overlimit2') }}</li>
         <li>{{ t('strength.overlimit4') }}</li>
       </ul>

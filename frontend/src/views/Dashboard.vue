@@ -3,6 +3,7 @@ import { themeColor } from '@/canvasFont'
 import { ref, reactive, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api } from '@/api'
 import QrCode from '@/components/QrCode.vue'
+import AppSelect from '@/components/AppSelect.vue'
 import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp, Share2 } from 'lucide-vue-next'
 import { toast } from '@/dialog'
 import { openShareExport } from '@/share'
@@ -452,14 +453,10 @@ onUnmounted(stopLive)
           <div class="card-head">
             <h2>{{ t('dashboard.usedTitle') }}</h2>
             <div class="head-tools">
-              <label class="sort-lbl">{{ t('dashboard.usedSort') }}
-                <select v-model="usedSort" class="sort-sel">
-                  <option value="channel">{{ t('dashboard.usedSortChannel') }}</option>
-                  <option value="name">{{ t('dashboard.usedSortName') }}</option>
-                  <option value="overlimit">{{ t('dashboard.usedSortOverlimit') }}</option>
-                  <option value="recent">{{ t('dashboard.usedSortRecent') }}</option>
-                </select>
-              </label>
+              <span class="sort-lbl">{{ t('dashboard.usedSort') }}</span>
+              <AppSelect v-model="usedSort" small class="sort-sel" :aria-label="t('dashboard.usedSort')" :options="[
+                { value: 'channel', label: t('dashboard.usedSortChannel') }, { value: 'name', label: t('dashboard.usedSortName') },
+                { value: 'overlimit', label: t('dashboard.usedSortOverlimit') }, { value: 'recent', label: t('dashboard.usedSortRecent') }]" />
               <button class="btn btn-ghost btn-sm" @click="openShareExport"><Share2 :size="13" />{{ t('share.share') }}</button>
               <router-link to="/params" class="head-link">{{ t('dashboard.usedManage') }}</router-link>
             </div>
@@ -585,7 +582,7 @@ onUnmounted(stopLive)
 /* Used parameters */
 .head-tools { display: flex; align-items: center; gap: var(--sp-3); }
 .sort-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-muted); }
-.sort-sel { font-size: var(--text-xs); padding: 2px 6px; }
+.sort-sel { width: 120px; min-width: 0; }
 .used-wrap { overflow-x: auto; }
 .used-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
 .used-table th { text-align: left; font-weight: 500; color: var(--text-muted); padding: 4px var(--sp-2); border-bottom: 1px solid var(--border); white-space: nowrap; }

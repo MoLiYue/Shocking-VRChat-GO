@@ -13,6 +13,8 @@ import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
 import { toast } from '@/dialog'
 
 const { t } = useI18n()
+// embedded: shown as a section of the combined setup page (Setup.vue)
+const props = defineProps<{ embedded?: boolean }>()
 
 type Ch = 'a' | 'b'
 interface RangeSeg { from: number; to: number; mode: string }
@@ -252,8 +254,10 @@ onActivated(async () => {
 
 <template>
   <div>
-    <h1 class="gradient-text page-title">{{ t('params.title') }}</h1>
-    <p class="page-desc">{{ t('params.desc') }}</p>
+    <template v-if="!props.embedded">
+      <h1 class="gradient-text page-title">{{ t('params.title') }}</h1>
+      <p class="page-desc">{{ t('params.desc') }}</p>
+    </template>
 
     <section class="channel-section">
       <div class="settings-row">
@@ -261,7 +265,7 @@ onActivated(async () => {
           <label><span class="ch-tag sm" :class="'ch-' + c">{{ c.toUpperCase() }}</span> {{ t('params.defaultMode') }}</label>
           <AppSelect v-model="defaultMode[c]" :options="defaultModeOptions" />
         </div>
-        <div v-for="c in CHANNELS" :key="'l' + c" class="setting">
+        <div v-for="c in (props.embedded ? [] : CHANNELS)" :key="'l' + c" class="setting">
           <label><span class="ch-tag sm" :class="'ch-' + c">{{ c.toUpperCase() }}</span> {{ t('params.strengthLimit') }}</label>
           <router-link to="/strength" class="readonly-value" :title="t('params.strengthLimitHint')">
             <span>{{ limits[c] }}</span><span class="readonly-link">{{ t('params.strengthLimitEdit') }} →</span>
