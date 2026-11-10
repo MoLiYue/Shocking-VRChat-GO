@@ -233,7 +233,8 @@ func (a *App) apiParamsGet(r *http.Request) (any, error) {
 type paramError struct {
 	Channel string `json:"channel"`
 	Index   int    `json:"index"`
-	Code    string `json:"code"` // empty_path | bad_path | bad_mode | duplicate
+	Code    string `json:"code"` // empty_path | bad_path | bad_mode | duplicate | bad_ranges
+	Detail  string `json:"detail,omitempty"`
 	Path    string `json:"path,omitempty"`
 }
 
@@ -242,6 +243,7 @@ var validModes = func() map[string]bool {
 	for _, x := range handler.Modes {
 		m[x] = true
 	}
+	m[handler.RangesMode] = true
 	return m
 }()
 
@@ -253,6 +255,7 @@ func validateParams(ch string, raw []any, defMode string) ([]any, []paramError) 
 	seen := map[string]int{}
 	for i, p := range raw {
 		var path, mode string
+		var extra config.M
 		enabled := true
 		switch t := p.(type) {
 		case string:
@@ -263,32 +266,45 @@ func validateParams(ch string, raw []any, defMode string) ([]any, []paramError) 
 			if v, ok := t["enabled"]; ok {
 				enabled = config.Bool(v, true)
 			}
+			extra = t
 		default:
-			errs = append(errs, paramError{ch, i, "bad_path", ""})
+			errs = append(errs, paramError{ch, i, "bad_path", "", ""})
 			continue
 		}
 		path = strings.TrimSpace(path)
 		if path == "" {
-			errs = append(errs, paramError{ch, i, "empty_path", ""})
+			errs = append(errs, paramError{ch, i, "empty_path", "", ""})
 			continue
 		}
 		if !strings.HasPrefix(path, "/") {
 			path = sps.AvatarParameterPrefix + path
 		}
 		if strings.ContainsAny(path, " \t#,?[]{}") || strings.HasSuffix(path, "/") {
-			errs = append(errs, paramError{ch, i, "bad_path", path})
+			errs = append(errs, paramError{ch, i, "bad_path", path, ""})
 			continue
 		}
 		if !validModes[mode] {
-			errs = append(errs, paramError{ch, i, "bad_mode", path})
+			errs = append(errs, paramError{ch, i, "bad_mode", path, ""})
 			continue
 		}
 		if _, dup := seen[path]; dup {
-			errs = append(errs, paramError{ch, i, "duplicate", path})
+			errs = append(errs, paramError{ch, i, "duplicate", path, ""})
 			continue
 		}
+		e := config.M{"path": path, "mode": mode, "enabled": enabled}
+		if mode == handler.RangesMode {
+			if _, err := handler.ParseMultiConfig(extra); err != nil {
+				errs = append(errs, paramError{ch, i, "bad_ranges", path, err.Error()})
+				continue
+			}
+			for _, k := range config.RangesKeys {
+				if v, ok := extra[k]; ok {
+					e[k] = config.DeepCopy(v)
+				}
+			}
+		}
 		seen[path] = i
-		out = append(out, config.M{"path": path, "mode": mode, "enabled": enabled})
+		out = append(out, e)
 	}
 	return out, errs
 }
@@ -352,7 +368,7 @@ func (a *App) apiParamsSet(r *http.Request) (any, error) {
 		return nil, err
 	}
 	defMode := config.Str(data["default_mode"], config.Str(a.Cfg.GetBasic("dglab3", "channel_"+ch, "mode"), "distance"))
-	if !validModes[defMode] {
+	if !validModes[defMode] || defMode == handler.RangesMode {
 		return nil, httpErr(400, "invalid default_mode: %s", defMode)
 	}
 	params, errs := validateParams(ch, config.AsList(data["params"]), defMode)
@@ -382,7 +398,7 @@ func (a *App) apiParamsSetAll(r *http.Request) (any, error) {
 			continue
 		}
 		defMode := config.Str(cd["default_mode"], config.Str(a.Cfg.GetBasic("dglab3", "channel_"+ch, "mode"), "distance"))
-		if !validModes[defMode] {
+		if !validModes[defMode] || defMode == handler.RangesMode {
 			return nil, httpErr(400, "invalid default_mode for channel %s: %s", ch, defMode)
 		}
 		params, e := validateParams(ch, config.AsList(cd["params"]), defMode)

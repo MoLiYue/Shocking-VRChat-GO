@@ -31,6 +31,9 @@ func TestStressDevicesAndOSC(t *testing.T) {
 			for j, m := range []string{"distance", "shock", "touch", "combo", "boost"} {
 				ps = append(ps, map[string]any{"path": fmt.Sprintf("/avatar/parameters/s%d_%d", i, j), "mode": m})
 			}
+			ps = append(ps, map[string]any{"path": fmt.Sprintf("/avatar/parameters/s%d_5", i), "mode": "ranges", "crossfade": 0.4,
+				"ranges": []any{map[string]any{"from": 0, "to": 0.4, "mode": "distance"}, map[string]any{"from": 0.4, "to": 0.7, "mode": "touch"},
+					map[string]any{"from": 0.7, "to": 1, "mode": "shock"}}})
 			config.Sub(basic, true, "dglab3", ch)["avatar_params"] = ps
 			sc := config.Sub(adv, true, "dglab3", ch, "mode_config", "shock")
 			sc["follow_value"] = true
@@ -62,7 +65,7 @@ func TestStressDevicesAndOSC(t *testing.T) {
 	// OSC flood
 	conn, _ := net.Dial("udp", "127.0.0.1:"+strconv.Itoa(e.oscPort))
 	run(func() {
-		addr := fmt.Sprintf("/avatar/parameters/s%d_%d", rand.Intn(2), rand.Intn(5))
+		addr := fmt.Sprintf("/avatar/parameters/s%d_%d", rand.Intn(2), rand.Intn(6))
 		b, _ := osc.Encode(addr, float32(rand.Float64()))
 		_, _ = conn.Write(b)
 		time.Sleep(200 * time.Microsecond)

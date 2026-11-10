@@ -159,6 +159,9 @@ func DefaultAdvanced() M {
 	}
 }
 
+// RangesKeys are the extra avatar_params fields of a "ranges" parameter.
+var RangesKeys = []string{"ranges", "crossfade", "blend", "crossfade_curve", "remap"}
+
 // NormalizeAvatarParams converts string entries into {path,mode,enabled} dicts.
 func NormalizeAvatarParams(ch M) {
 	defMode := Str(ch["mode"], "distance")
@@ -176,7 +179,13 @@ func NormalizeAvatarParams(ch M) {
 			if v, ok := t["mode"]; ok && v != nil {
 				mode = Str(v, defMode)
 			}
-			out = append(out, M{"path": Str(t["path"], ""), "mode": mode, "enabled": enabled})
+			e := M{"path": Str(t["path"], ""), "mode": mode, "enabled": enabled}
+			for _, k := range RangesKeys { // settings of "ranges" (multi-mode) params
+				if v, ok := t[k]; ok {
+					e[k] = DeepCopy(v)
+				}
+			}
+			out = append(out, e)
 		}
 	}
 	ch["avatar_params"] = out

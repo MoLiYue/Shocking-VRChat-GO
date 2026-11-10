@@ -29,6 +29,8 @@ type Engine struct {
 	oscSrv   *osc.Server
 	ws       *device.V3Server
 	handlers []*handler.Shock
+	// mixers are the "ranges" parameters (one per parameter, not shared).
+	mixers []*handler.Multi
 }
 
 // Running reports whether the engine is started.
@@ -47,7 +49,7 @@ func (e *Engine) Handlers() []*handler.Shock {
 
 // build creates the routing table. Handlers in reuse (keyed "A/shock")
 // are kept, so their in-flight state survives a reconfiguration.
-func (e *Engine) build(reuse map[string]*handler.Shock) (*osc.Dispatcher, []*handler.Shock) {
+func (e *Engine) build(reuse map[string]*handler.Shock) (*osc.Dispatcher, []*handler.Shock, []*handler.Multi) {
 	a := e.a
 	d := &osc.Dispatcher{Hook: a.oscGlobalHook}
 	deps := &handler.Deps{
@@ -56,6 +58,7 @@ func (e *Engine) build(reuse map[string]*handler.Shock) (*osc.Dispatcher, []*han
 		CurveGetter:      a.curvePoints,
 	}
 	var hs []*handler.Shock
+	var ms []*handler.Multi
 	for _, ch := range []string{"A", "B"} {
 		byMode := map[string]*handler.Shock{}
 		active := 0
@@ -71,6 +74,21 @@ func (e *Engine) build(reuse map[string]*handler.Shock) (*osc.Dispatcher, []*han
 				continue
 			}
 			mode := config.Str(pm["mode"], "distance")
+			if mode == handler.RangesMode {
+				mc, err := handler.ParseMultiConfig(pm)
+				var m *handler.Multi
+				if err == nil {
+					m, err = handler.NewMulti(deps, ch, path, mc)
+				}
+				if err != nil {
+					logx.Error("[engine] Channel %s param %s: %v", ch, path, err)
+					continue
+				}
+				ms = append(ms, m)
+				d.Map(path, m.OSC)
+				active++
+				continue
+			}
 			h := byMode[mode]
 			if h == nil {
 				if old := reuse[ch+"/"+mode]; old != nil {
@@ -92,7 +110,7 @@ func (e *Engine) build(reuse map[string]*handler.Shock) (*osc.Dispatcher, []*han
 		}
 		logx.Info("[engine] Channel %s: %d active params", ch, active)
 	}
-	return d, hs
+	return d, hs, ms
 }
 
 // Reconfigure applies avatar_params changes without restarting: the OSC
@@ -111,9 +129,10 @@ func (e *Engine) Reconfigure() {
 		old[h.Channel+"/"+h.Mode] = h
 	}
 	srv := e.oscSrv
+	oldMixers := e.mixers
 	e.stateMu.Unlock()
 
-	d, hs := e.build(old)
+	d, hs, ms := e.build(old)
 	keep := map[*handler.Shock]bool{}
 	for _, h := range hs {
 		if old[h.Channel+"/"+h.Mode] == h {
@@ -122,10 +141,17 @@ func (e *Engine) Reconfigure() {
 			h.Start()
 		}
 	}
+	for _, m := range ms {
+		m.Start()
+	}
 	srv.SetDispatcher(d)
 	e.stateMu.Lock()
-	e.handlers = hs
+	e.handlers, e.mixers = hs, ms
 	e.stateMu.Unlock()
+	// Mixers hold per-parameter state and are rebuilt on every change.
+	for _, m := range oldMixers {
+		m.Stop()
+	}
 	stopped := 0
 	for _, h := range old {
 		if !keep[h] {
@@ -150,7 +176,7 @@ func (e *Engine) start() {
 		return
 	}
 	a := e.a
-	disp, hs := e.build(nil)
+	disp, hs, ms := e.build(nil)
 	a.Queue.Clear()
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -179,8 +205,11 @@ func (e *Engine) start() {
 	for _, h := range hs {
 		h.Start()
 	}
+	for _, m := range ms {
+		m.Start()
+	}
 	e.stateMu.Lock()
-	e.cancel, e.oscSrv, e.handlers = cancel, srv, hs
+	e.cancel, e.oscSrv, e.handlers, e.mixers = cancel, srv, hs, ms
 	wsUp := e.ws != nil
 	e.stateMu.Unlock()
 	if !wsUp {
@@ -248,7 +277,7 @@ func (e *Engine) stop(keepWS bool) {
 	}
 	logx.Info("[engine] Stopping...")
 	e.stateMu.Lock()
-	cancel, srv, hs := e.cancel, e.oscSrv, e.handlers
+	cancel, srv, hs, ms := e.cancel, e.oscSrv, e.handlers, e.mixers
 	e.stateMu.Unlock()
 	if !keepWS {
 		e.stopWS()
@@ -263,8 +292,11 @@ func (e *Engine) stop(keepWS bool) {
 	for _, h := range hs {
 		h.Stop()
 	}
+	for _, m := range ms {
+		m.Stop()
+	}
 	e.stateMu.Lock()
-	e.running, e.oscSrv, e.handlers, e.cancel = false, nil, nil, nil
+	e.running, e.oscSrv, e.handlers, e.mixers, e.cancel = false, nil, nil, nil, nil
 	e.stateMu.Unlock()
 	if keepWS {
 		logx.Info("[engine] Stopped. (WS preserved)")

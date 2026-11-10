@@ -11,7 +11,12 @@ import { toast } from '@/dialog'
 const { t } = useI18n()
 
 type Ch = 'a' | 'b'
-interface Param { path: string; mode: string; enabled: boolean }
+interface RangeSeg { from: number; to: number; mode: string }
+interface Param {
+  path: string; mode: string; enabled: boolean
+  // mode 'ranges': value ranges -> modes, crossfaded (see internal/handler/multi.go)
+  ranges?: RangeSeg[]; crossfade?: number; blend?: number; crossfade_curve?: string; remap?: boolean
+}
 interface ChannelState {
   params: Param[]
   defaultMode: string
@@ -28,6 +33,37 @@ interface ChannelState {
 }
 
 const MODES = ['distance', 'shock', 'touch', 'combo', 'boost']
+const RANGES = 'ranges'
+const MIX_MODES = MODES // modes a range can use
+
+// A param switched to 'ranges' starts with a two-range example.
+function ensureRanges(p: Param) {
+  if (p.mode !== RANGES) return
+  if (!p.ranges?.length) p.ranges = [{ from: 0, to: 0.5, mode: 'distance' }, { from: 0.5, to: 1, mode: 'shock' }]
+  p.crossfade ??= 0.5
+  p.blend ??= 0.05
+  p.crossfade_curve ??= 'equal_power'
+  p.remap ??= true
+}
+function addRange(p: Param) {
+  const rs = p.ranges!
+  const last = rs[rs.length - 1]
+  if (last && last.to - last.from > 0.1) {
+    // split the last range in half
+    const mid = Math.round((last.from + last.to) / 2 * 100) / 100
+    rs.push({ from: mid, to: last.to, mode: 'shock' })
+    last.to = mid
+  } else rs.push({ from: last ? last.to : 0, to: 1, mode: 'distance' })
+}
+function rangeError(p: Param): string {
+  for (const [i, r] of (p.ranges || []).entries()) {
+    if (!(r.to > r.from) || r.from < 0 || r.to > 1) return t('params.rangeInvalid', { n: i + 1 })
+  }
+  return ''
+}
+function rangeStyle(r: RangeSeg) {
+  return { left: (r.from * 100) + '%', width: Math.max(0, (r.to - r.from) * 100) + '%' }
+}
 const PREFIX = '/avatar/parameters/'
 const CHANNELS: Ch[] = ['a', 'b']
 
@@ -40,7 +76,9 @@ const saving = ref(false)
 /** Row errors from the server: key "a:2" -> message */
 const rowErrors = ref<Record<string, string>>({})
 
-const modeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
+const modeOptions = computed(() => [...MODES, RANGES].map((m) => ({ value: m, label: modeLabel(m) })))
+const defaultModeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
+const mixModeOptions = computed(() => MIX_MODES.map((m) => ({ value: m, label: modeLabel(m) })))
 
 // Dirty = differs from what was last loaded/saved (not "was touched").
 // Auto-saved: add / remove / toggle / confirmed edits / mode changes apply
@@ -71,6 +109,7 @@ async function load() {
     const d = await api(`/api/v1/params/${c}`)
     Object.assign(st[c], emptyChannel(), {
       params: (d.params || []).map((p: any) => ({
+        ...(typeof p === 'string' ? {} : p),
         path: typeof p === 'string' ? p : p.path,
         mode: (typeof p === 'string' ? '' : p.mode) || d.default_mode || 'distance',
         enabled: typeof p === 'string' ? true : p.enabled !== false,
@@ -87,7 +126,9 @@ function addParam(c: Ch) {
   const s = st[c]
   const r = normalize(c, s.newPath, null)
   if (r.error) { s.addError = r.error; return }
-  s.params.push({ path: r.path!, mode: s.newMode, enabled: true })
+  const np: Param = { path: r.path!, mode: s.newMode, enabled: true }
+  ensureRanges(np)
+  s.params.push(np)
   s.newPath = ''
   s.addError = ''
 }
@@ -115,6 +156,7 @@ function confirmEdit(c: Ch): boolean {
   const r = normalize(c, s.editPath, s.editIndex)
   if (r.error) { s.editError = r.error; return false }
   s.params[s.editIndex] = { ...s.params[s.editIndex], path: r.path!, mode: s.editMode }
+  ensureRanges(s.params[s.editIndex])
   delete rowErrors.value[`${c}:${s.editIndex}`]
   s.editIndex = null
   s.editError = ''
@@ -124,6 +166,7 @@ function cancelEdit(c: Ch) { st[c].editIndex = null; st[c].editError = '' }
 
 const ERR_KEYS: Record<string, string> = {
   empty_path: 'params.errEmpty', bad_path: 'params.errBadPath', bad_mode: 'params.errBadMode', duplicate: 'params.paramExists',
+  bad_ranges: 'params.errBadRanges',
 }
 
 async function save(manual = true) {
@@ -143,7 +186,7 @@ async function save(manual = true) {
       unsaved.markClean()
       if (manual) toast(t('params.appliedLive'), 'success')
     } else if (Array.isArray(data.errors)) {
-      for (const e of data.errors) rowErrors.value[`${e.channel}:${e.index}`] = t(ERR_KEYS[e.code] || 'common.saveFailed')
+      for (const e of data.errors) rowErrors.value[`${e.channel}:${e.index}`] = t(ERR_KEYS[e.code] || 'common.saveFailed') + (e.detail ? `: ${e.detail}` : '')
       toast(t('params.fixErrors', { n: data.errors.length }), 'error')
     } else {
       toast(data.detail || data.error || t('common.saveFailed'), 'error')
@@ -181,7 +224,7 @@ onActivated(async () => {
       <div class="settings-row">
         <div class="setting">
           <label>{{ t('params.defaultMode') }}</label>
-          <AppSelect v-model="st[c].defaultMode" :options="modeOptions" />
+          <AppSelect v-model="st[c].defaultMode" :options="defaultModeOptions" />
         </div>
         <div class="setting">
           <label>{{ t('params.strengthLimit') }}</label>
@@ -201,8 +244,8 @@ onActivated(async () => {
           </tr>
         </thead>
         <tbody>
+          <template v-for="(p, i) in st[c].params" :key="p.path + i">
           <tr
-            v-for="(p, i) in st[c].params" :key="p.path + i"
             :class="{ editing: st[c].editIndex === i, 'disabled-row': !p.enabled && st[c].editIndex !== i, 'error-row': rowErrors[c + ':' + i] }"
           >
             <td><input v-model="p.enabled" type="checkbox" :aria-label="t('params.colEnabled')"></td>
@@ -235,6 +278,35 @@ onActivated(async () => {
               </td>
             </template>
           </tr>
+          <tr v-if="p.mode === RANGES && st[c].editIndex !== i && p.ranges" class="ranges-row" :class="{ 'disabled-row': !p.enabled }">
+            <td></td>
+            <td colspan="3">
+              <div class="ranges-bar" role="img" :aria-label="t('params.rangesTitle')">
+                <div v-for="(r, ri) in p.ranges" :key="ri" class="ranges-seg" :class="'mode-' + r.mode" :style="rangeStyle(r)">{{ modeLabel(r.mode) }}</div>
+              </div>
+              <div v-for="(r, ri) in p.ranges" :key="ri" class="range-line">
+                <input type="number" v-model.number="r.from" min="0" max="1" step="0.05" class="num" :aria-label="t('params.rangeFrom')">
+                <span>–</span>
+                <input type="number" v-model.number="r.to" min="0" max="1" step="0.05" class="num" :aria-label="t('params.rangeTo')">
+                <AppSelect v-model="r.mode" class="range-mode" :options="mixModeOptions" />
+                <button class="icon-action danger" :disabled="p.ranges.length <= 1" :title="t('common.delete')" :aria-label="t('common.delete')" @click="p.ranges.splice(ri, 1)"><Trash2 :size="14" /></button>
+              </div>
+              <button class="btn btn-ghost btn-sm" @click="addRange(p)"><Plus :size="14" />{{ t('params.rangeAdd') }}</button>
+              <div class="range-opts">
+                <label>{{ t('params.crossfade') }}
+                  <input type="number" v-model.number="p.crossfade" min="0" max="10" step="0.1" class="num">s</label>
+                <label :title="t('params.blendHint')">{{ t('params.blend') }}
+                  <input type="number" v-model.number="p.blend" min="0" max="0.5" step="0.01" class="num"></label>
+                <label>{{ t('params.curve') }}
+                  <AppSelect v-model="p.crossfade_curve" class="range-mode"
+                    :options="[{ value: 'equal_power', label: t('params.curveEqualPower') }, { value: 'linear', label: t('params.curveLinear') }]" /></label>
+                <label class="chk" :title="t('params.remapHint')"><input type="checkbox" v-model="p.remap">{{ t('params.remap') }}</label>
+              </div>
+              <div v-if="rangeError(p)" class="row-error">{{ rangeError(p) }}</div>
+              <p class="range-hint">{{ t('params.rangesHint') }}</p>
+            </td>
+          </tr>
+          </template>
           <tr v-if="!st[c].params.length"><td colspan="4" class="empty">{{ t('params.noParams') }}</td></tr>
         </tbody>
       </table>
@@ -263,6 +335,19 @@ onActivated(async () => {
 </template>
 
 <style scoped>
+.ranges-row td { padding-top: 0; }
+.ranges-bar { position: relative; height: 18px; border-radius: var(--radius-sm); background: var(--bg-inset); margin: 4px 0 8px; overflow: hidden; }
+.ranges-seg { position: absolute; top: 0; height: 100%; font-size: var(--text-2xs); line-height: 18px; text-align: center; color: var(--text); background: rgba(var(--accent-rgb), 0.18); border-right: 1px solid var(--bg-card); overflow: hidden; white-space: nowrap; }
+.ranges-seg.mode-shock { background: rgba(var(--red-rgb), 0.25); }
+.ranges-seg.mode-touch { background: rgba(var(--green-rgb), 0.25); }
+.ranges-seg.mode-combo { background: rgba(var(--yellow-rgb), 0.3); }
+.ranges-seg.mode-boost { background: rgba(var(--accent-rgb), 0.35); }
+.range-line { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 4px; font-size: var(--text-sm); }
+.range-line .num, .range-opts .num { width: 64px; text-align: center; }
+.range-mode { width: 130px; min-width: 0; }
+.range-opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-2); font-size: var(--text-sm); color: var(--text-secondary); }
+.range-opts label { display: inline-flex; align-items: center; gap: 4px; }
+.range-hint { font-size: var(--text-xs); color: var(--text-muted); margin: 4px 0 0; }
 .channel-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--sp-5); margin-bottom: var(--sp-4); }
 .channel-header { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
 .ch-title { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-lg); margin: 0; }
@@ -292,6 +377,7 @@ td { padding: var(--sp-2); font-size: var(--text-sm); border-bottom: 1px solid v
 .mode-touch { background: var(--success-surface); color: var(--success); }
 .mode-combo { background: var(--warning-surface); color: var(--warning); }
 .mode-boost { background: rgba(var(--accent-rgb), 0.1); color: var(--purple); }
+.mode-ranges { background: rgba(var(--yellow-rgb), 0.15); color: var(--warning); }
 .actions { display: flex; gap: var(--sp-1); }
 .editing { background: rgba(var(--accent-rgb), 0.04); }
 .disabled-row { opacity: 0.5; }

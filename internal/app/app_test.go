@@ -1064,3 +1064,51 @@ func TestOverlimitPercentBoost(t *testing.T) {
 		t.Fatalf("full %v half %v, want A 20/10 B 40/20", full, half)
 	}
 }
+
+// A "ranges" parameter is validated, saved with its settings and applied
+// live as a mixer that drives the devices.
+func TestRangesParamEndToEnd(t *testing.T) {
+	e := newEnv(t)
+	bad := e.postJSON(t, "/api/v1/params", map[string]any{"a": map[string]any{"params": []any{
+		map[string]any{"path": "R", "mode": "ranges", "ranges": []any{map[string]any{"from": 0.5, "to": 0.2, "mode": "shock"}}},
+	}}})
+	if bad["_status"] != 400 {
+		t.Fatalf("invalid ranges accepted: %v", bad)
+	}
+	ok := e.postJSON(t, "/api/v1/params", map[string]any{"a": map[string]any{"params": []any{
+		map[string]any{"path": "R", "mode": "ranges", "crossfade": 0.3, "ranges": []any{
+			map[string]any{"from": 0, "to": 0.5, "mode": "distance"},
+			map[string]any{"from": 0.5, "to": 1, "mode": "shock"},
+		}},
+	}}})
+	if ok["success"] != true {
+		t.Fatalf("save: %v", ok)
+	}
+	got := e.getJSON(t, "/api/v1/params/a")
+	p := config.AsMap(config.AsList(got["params"])[0])
+	if p["mode"] != "ranges" || len(config.AsList(p["ranges"])) != 2 || config.Float(p["crossfade"], 0) != 0.3 {
+		t.Fatalf("stored param %v", p)
+	}
+	if adv := config.AsMap(config.AsList(e.a.Cfg.Get("dglab3", "channel_a", "avatar_params"))[0]); len(config.AsList(adv["ranges"])) != 2 {
+		t.Fatalf("advanced tree lost ranges: %v", adv)
+	}
+	e.a.Engine.stateMu.Lock()
+	n := len(e.a.Engine.mixers)
+	e.a.Engine.stateMu.Unlock()
+	if n != 1 {
+		t.Fatalf("mixers: %d", n)
+	}
+	// OSC on the parameter produces mixed output on channel A.
+	app := dialMockApp(t, e)
+	master := config.Str(e.a.Cfg.Get("ws", "master_uuid"), "")
+	devID := app.waitFor(func(v map[string]string) bool { return v["type"] == "bind" }, 2*time.Second)["clientId"]
+	app.send(map[string]string{"type": "bind", "clientId": master, "targetId": devID, "message": "DGLAB"})
+	conn, _ := net.Dial("udp", "127.0.0.1:"+strconv.Itoa(e.oscPort))
+	defer conn.Close()
+	b, _ := osc.Encode("/avatar/parameters/R", float32(0.3))
+	_, _ = conn.Write(b)
+	got2 := app.waitFor(func(v map[string]string) bool { return strings.HasPrefix(v["message"], "pulse-A:") }, 2*time.Second)
+	if got2 == nil {
+		t.Fatal("no pulse")
+	}
+}
