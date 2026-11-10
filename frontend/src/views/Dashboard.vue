@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { themeColor } from '@/canvasFont'
-import { ref, reactive, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { api } from '@/api'
 import QrCode from '@/components/QrCode.vue'
-import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp } from 'lucide-vue-next'
+import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp, Share2 } from 'lucide-vue-next'
 import { toast } from '@/dialog'
+import { openShareExport } from '@/share'
 import { useI18n } from '@/i18n'
 
 const { t } = useI18n()
@@ -24,6 +25,33 @@ const usedParams = ref<UsedParam[]>([])
 // Parameters with no enabled use at all are hidden; partially enabled ones
 // show their enabled and disabled uses separately.
 const activeUsedParams = computed(() => usedParams.value.filter((p) => p.sources.some((s) => s.enabled)))
+
+// Sorting of the "parameters in use" table (remembered).
+type UsedSort = 'name' | 'channel' | 'overlimit' | 'recent'
+const usedSort = ref<UsedSort>((localStorage.getItem('usedSort') as UsedSort) || 'channel')
+watch(usedSort, (v) => localStorage.setItem('usedSort', v))
+const srcOf = (p: UsedParam, ch: 'A' | 'B') => p.sources.filter((s) => s.kind === 'param' && s.channel === ch)
+const rulesOf = (p: UsedParam) => p.sources.filter((s) => s.kind === 'overlimit')
+const enabledOn = (p: UsedParam, ch: 'A' | 'B') => srcOf(p, ch).some((s) => s.enabled) ||
+  rulesOf(p).some((s) => s.enabled && (s.channel === ch || s.channel === 'BOTH'))
+function channelRank(p: UsedParam) {
+  // A only, A+B, B only, overlimit only
+  const a = srcOf(p, 'A').some((s) => s.enabled), b = srcOf(p, 'B').some((s) => s.enabled)
+  return a && !b ? 0 : a && b ? 1 : b ? 2 : 3
+}
+const sortedUsedParams = computed(() => {
+  const name = (p: UsedParam) => shortPath(p.path).toLowerCase()
+  const byName = (x: UsedParam, y: UsedParam) => name(x).localeCompare(name(y))
+  const list = [...activeUsedParams.value]
+  switch (usedSort.value) {
+    case 'channel': return list.sort((x, y) => channelRank(x) - channelRank(y) || byName(x, y))
+    case 'overlimit': return list.sort((x, y) => (rulesOf(y).some((s) => s.enabled) ? 1 : 0) - (rulesOf(x).some((s) => s.enabled) ? 1 : 0) || byName(x, y))
+    case 'recent': return list.sort((x, y) => (x.last_seen_ago ?? 1e12) - (y.last_seen_ago ?? 1e12) || byName(x, y))
+    default: return list.sort(byName)
+  }
+})
+/** Channels an overlimit rule actually acts on. */
+function ruleChannels(s: UsedSource) { return s.channel === 'BOTH' ? 'A+B' : s.channel }
 const oscStatus = ref('')
 const lastTrigger = ref('-')
 // Latest value per parameter straight from the live OSC feed (the value
@@ -310,10 +338,6 @@ function modeLabel(mode: string) {
   const tr = t(key)
   return tr !== key ? tr : mode
 }
-function sourceLabel(s: UsedSource) {
-  if (s.kind === 'param') return `${s.channel} · ${modeLabel(s.mode || '')}`
-  return `${t('dashboard.usedOverlimit')} · ${s.rule || '-'}`
-}
 function currentValue(p: UsedParam): unknown {
   const l = liveValues[p.path]
   if (l && (p.last_seen_ago == null || Date.now() - l.at < p.last_seen_ago * 1000 + 1000)) return l.v
@@ -427,25 +451,51 @@ onUnmounted(stopLive)
         <section class="card">
           <div class="card-head">
             <h2>{{ t('dashboard.usedTitle') }}</h2>
-            <router-link to="/params" class="head-link">{{ t('dashboard.usedManage') }}</router-link>
-          </div>
-          <div class="used-list">
-            <div v-for="p in activeUsedParams" :key="p.path" class="used-row">
-              <span class="live-dot" :class="{ on: isFresh(p) }" />
-              <span class="used-path" :title="p.path">{{ shortPath(p.path) }}</span>
-              <span class="used-val" :class="{ none: currentValue(p) === undefined }">{{ currentValue(p) === undefined ? '—' : fmtValue(currentValue(p)) }}</span>
-              <span class="used-tags">
-                <span v-for="(s, i) in p.sources.filter((x) => x.enabled)" :key="'on' + i" class="used-tag" :class="s.kind"
-                  :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
-                <template v-if="p.sources.some((x) => !x.enabled)">
-                  <span class="used-off-label">{{ t('dashboard.usedDisabled') }}</span>
-                  <span v-for="(s, i) in p.sources.filter((x) => !x.enabled)" :key="'off' + i" class="used-tag off" :class="s.kind"
-                    :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
-                </template>
-              </span>
-              <span class="used-ago">{{ p.last_seen_ago != null ? fmtAgo(p.last_seen_ago) : (p.wildcard ? '' : t('dashboard.usedNever')) }}</span>
+            <div class="head-tools">
+              <label class="sort-lbl">{{ t('dashboard.usedSort') }}
+                <select v-model="usedSort" class="sort-sel">
+                  <option value="channel">{{ t('dashboard.usedSortChannel') }}</option>
+                  <option value="name">{{ t('dashboard.usedSortName') }}</option>
+                  <option value="overlimit">{{ t('dashboard.usedSortOverlimit') }}</option>
+                  <option value="recent">{{ t('dashboard.usedSortRecent') }}</option>
+                </select>
+              </label>
+              <button class="btn btn-ghost btn-sm" @click="openShareExport"><Share2 :size="13" />{{ t('share.share') }}</button>
+              <router-link to="/params" class="head-link">{{ t('dashboard.usedManage') }}</router-link>
             </div>
-            <div v-if="!activeUsedParams.length" class="empty">{{ t('dashboard.usedNone') }}</div>
+          </div>
+          <div class="used-wrap">
+          <table class="used-table">
+            <thead>
+              <tr>
+                <th>{{ t('dashboard.usedColParam') }}</th>
+                <th class="num">{{ t('dashboard.usedColValue') }}</th>
+                <th><span class="ch-tag sm ch-a">A</span></th>
+                <th><span class="ch-tag sm ch-b">B</span></th>
+                <th>{{ t('dashboard.usedColOverlimit') }}</th>
+                <th class="num">{{ t('dashboard.usedColSeen') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in sortedUsedParams" :key="p.path">
+                <td class="u-path" :title="p.path"><span class="live-dot" :class="{ on: isFresh(p) }" />{{ shortPath(p.path) }}</td>
+                <td class="num u-val" :class="{ none: currentValue(p) === undefined }">{{ currentValue(p) === undefined ? '—' : fmtValue(currentValue(p)) }}</td>
+                <td v-for="ch in (['A', 'B'] as const)" :key="ch" :class="{ 'u-off': !enabledOn(p, ch) }">
+                  <span v-for="(s, i) in srcOf(p, ch)" :key="i" class="used-tag" :class="{ off: !s.enabled }"
+                    :title="s.enabled ? '' : t('dashboard.usedDisabled')">{{ modeLabel(s.mode || '') }}</span>
+                  <span v-if="!srcOf(p, ch).length" class="dash">·</span>
+                </td>
+                <td>
+                  <span v-for="(s, i) in rulesOf(p)" :key="i" class="used-tag overlimit" :class="{ off: !s.enabled }"
+                    :title="`${s.operator} ${s.value ?? ''}` + (s.enabled ? '' : ' · ' + t('dashboard.usedDisabled'))">
+                    {{ s.rule || '-' }} → {{ ruleChannels(s) }}</span>
+                  <span v-if="!rulesOf(p).length" class="dash">·</span>
+                </td>
+                <td class="num used-ago">{{ p.last_seen_ago != null ? fmtAgo(p.last_seen_ago) : (p.wildcard ? '' : t('dashboard.usedNever')) }}</td>
+              </tr>
+              <tr v-if="!sortedUsedParams.length"><td colspan="6" class="empty">{{ t('dashboard.usedNone') }}</td></tr>
+            </tbody>
+          </table>
           </div>
         </section>
       </div>
@@ -533,20 +583,28 @@ onUnmounted(stopLive)
 .sw.over { background: var(--warning); }
 
 /* Used parameters */
+.head-tools { display: flex; align-items: center; gap: var(--sp-3); }
+.sort-lbl { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--text-muted); }
+.sort-sel { font-size: var(--text-xs); padding: 2px 6px; }
+.used-wrap { overflow-x: auto; }
+.used-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+.used-table th { text-align: left; font-weight: 500; color: var(--text-muted); padding: 4px var(--sp-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.used-table td { padding: 4px var(--sp-2); border-bottom: 1px solid var(--border-subtle, var(--border)); vertical-align: middle; }
+.used-table tbody tr:hover { background: var(--bg-hover); }
+.used-table .num { text-align: right; white-space: nowrap; }
+.u-path { font-family: var(--font-mono); color: var(--text); white-space: nowrap; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.u-path .live-dot { display: inline-block; margin-right: 6px; vertical-align: middle; }
+.u-val { font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; min-width: 56px; }
+.u-val.none { color: var(--text-muted); font-weight: 400; }
+.u-off { opacity: 0.55; }
+.used-table .used-tag { margin: 1px 4px 1px 0; display: inline-block; white-space: nowrap; }
+.dash { color: var(--text-muted); }
 .head-link { font-size: var(--text-xs); color: var(--text-muted); }
-.used-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 2px var(--sp-4); }
-.used-row { display: flex; align-items: center; gap: var(--sp-2); padding: 5px var(--sp-2); border-radius: var(--radius-sm); min-width: 0; }
-.used-row:hover { background: var(--bg-hover); }
-.used-path { flex: 0 1 auto; min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-family: var(--font-mono); font-size: var(--text-xs); }
-.used-val { flex-shrink: 0; min-width: 52px; font-family: var(--font-mono); font-size: var(--text-sm); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-.used-val.none { color: var(--text-muted); font-weight: 400; }
 .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); opacity: 0.4; flex-shrink: 0; }
 .live-dot.on { background: var(--success); opacity: 1; }
-.used-tags { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .used-tag { font-size: var(--text-2xs); padding: 1px 6px; border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-secondary); }
 .used-tag.overlimit { background: var(--warning-surface, rgba(255, 170, 0, 0.12)); color: var(--warning); }
 .used-tag.off { opacity: 0.5; text-decoration: line-through; }
-.used-off-label { font-size: var(--text-2xs); color: var(--text-muted); margin-left: var(--sp-1); }
 .used-ago { flex-shrink: 0; font-size: var(--text-2xs); color: var(--text-muted); margin-left: auto; }
 .out-val { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
 .out-val strong { color: var(--text); }
