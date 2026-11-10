@@ -15,6 +15,13 @@ const connected = ref(false)
 const deviceCount = ref(0)
 const strength = ref({ A: 0, B: 0 })
 const limit = ref({ A: 100, B: 100 })
+// Base strength limit (strength page) and the current overlimit boost on top.
+const baseLimit = ref({ A: 0, B: 0 })
+const boost = ref({ A: 0, B: 0 })
+
+interface UsedSource { kind: 'param' | 'overlimit'; channel: string; mode?: string; rule?: string; operator?: string; value?: number; enabled: boolean }
+interface UsedParam { path: string; sources: UsedSource[]; wildcard: boolean; last_value?: unknown; last_seen_ago?: number }
+const usedParams = ref<UsedParam[]>([])
 const oscStatus = ref('')
 const lastTrigger = ref('-')
 const oscEvents = ref<any[]>([])
@@ -84,6 +91,7 @@ function connectLiveWs() {
         connected.value = devices.length > 0
         if (devices.length > 0) {
           strength.value = devices[0].strength || { A: 0, B: 0 }
+          applyLimits(devices[0])
           limit.value = {
             A: Math.min(devices[0].strength_max?.A || 0, devices[0].strength_limit?.A || 100),
             B: Math.min(devices[0].strength_max?.B || 0, devices[0].strength_limit?.B || 100),
@@ -111,6 +119,15 @@ function disconnectLiveWs() {
   if (dashWs) { const ws = dashWs; dashWs = null; ws.close() }
 }
 
+function applyLimits(d: any) {
+  baseLimit.value = { A: d.strength_limit?.A ?? 0, B: d.strength_limit?.B ?? 0 }
+  boost.value = { A: d.limit_boost?.A ?? 0, B: d.limit_boost?.B ?? 0 }
+}
+
+async function pollUsedParams() {
+  try { usedParams.value = (await api('/api/v1/params/used')).params || [] } catch {}
+}
+
 // --- Polling (fallback for initial load and status heartbeat) ---
 async function pollStatus() {
   try {
@@ -121,6 +138,7 @@ async function pollStatus() {
     if (devices.length > 0) {
       const attr = devices[0].attr
       strength.value = attr.strength
+      applyLimits(attr)
       limit.value = {
         A: Math.min(attr.strength_max?.A || 0, attr.strength_limit?.A || 100),
         B: Math.min(attr.strength_max?.B || 0, attr.strength_limit?.B || 100),
@@ -276,8 +294,31 @@ async function copyQr() {
 }
 
 // Helpers
-function barPct(ch: 'A' | 'B') {
-  return Math.min(strength.value[ch] / 200 * 100, 100)
+// Output strength split into the part within the base limit and the part
+// above it (allowed only by an active overlimit boost).
+function basePart(ch: 'A' | 'B') { return Math.min(strength.value[ch], baseLimit.value[ch] || strength.value[ch]) }
+function overPart(ch: 'A' | 'B') { return Math.max(0, strength.value[ch] - basePart(ch)) }
+function pct(v: number) { return Math.min(v / 200 * 100, 100) }
+
+function modeLabel(mode: string) {
+  const key = 'params.mode' + mode.charAt(0).toUpperCase() + mode.slice(1)
+  const tr = t(key)
+  return tr !== key ? tr : mode
+}
+function sourceLabel(s: UsedSource) {
+  if (s.kind === 'param') return `${s.channel} · ${modeLabel(s.mode || '')}`
+  return `${t('dashboard.usedOverlimit')} · ${s.rule || '-'}`
+}
+function fmtValue(v: unknown) {
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(3)
+  return String(v)
+}
+function fmtAgo(sec?: number) {
+  if (sec == null) return ''
+  if (sec < 2) return t('dashboard.justNow')
+  if (sec < 60) return `${Math.round(sec)}s`
+  if (sec < 3600) return `${Math.round(sec / 60)}min`
+  return `${Math.round(sec / 3600)}h`
 }
 function shortPath(addr: string) { return addr.replace('/avatar/parameters/', '') }
 const timeStr = formatTime
@@ -286,10 +327,12 @@ function startLive() {
   if (liveWanted) return
   liveWanted = true
   pollStatus()
+  pollUsedParams()
   connectLiveWs()
   startWaveAnim()
   intervals.push(window.setInterval(pollStatus, 5000))
   intervals.push(window.setInterval(updateOscRate, 1000))
+  intervals.push(window.setInterval(pollUsedParams, 2000))
 }
 function stopLive() {
   intervals.forEach(clearInterval)
@@ -344,10 +387,24 @@ onUnmounted(stopLive)
           <div class="out-row" v-for="ch in (['A', 'B'] as const)" :key="ch" :class="'ch-' + ch.toLowerCase()">
             <div class="out-head">
               <span class="ch-tag">{{ ch }}</span>
-              <div class="bar-track"><div class="bar-fill" :style="{ width: barPct(ch) + '%' }"></div></div>
-              <span class="out-val"><strong>{{ strength[ch] }}</strong> / 200</span>
+              <div class="bar-track" role="img"
+                :aria-label="t('dashboard.strengthAria', { base: basePart(ch), over: overPart(ch) })">
+                <div class="bar-fill" :style="{ width: pct(basePart(ch)) + '%' }"></div>
+                <div class="bar-over" :style="{ left: pct(basePart(ch)) + '%', width: pct(overPart(ch)) + '%' }"></div>
+                <div v-if="boost[ch] > 0 && baseLimit[ch] > 0" class="bar-mark" :style="{ left: pct(baseLimit[ch]) + '%' }"
+                  :title="t('dashboard.baseLimitMark', { n: baseLimit[ch] })"></div>
+              </div>
+              <span class="out-val">
+                <strong>{{ strength[ch] }}</strong>
+                <span v-if="overPart(ch) > 0" class="over-val" :title="t('dashboard.overPart')">(+{{ overPart(ch) }})</span>
+                / 200
+              </span>
             </div>
             <canvas :ref="(el) => setCanvas(ch, el)" class="wave-canvas"></canvas>
+          </div>
+          <div class="legend">
+            <span><i class="sw base" />{{ t('dashboard.legendBase') }}</span>
+            <span><i class="sw over" />{{ t('dashboard.legendOver') }}</span>
           </div>
         </section>
 
@@ -397,6 +454,30 @@ onUnmounted(stopLive)
             </div>
           </template>
         </section>
+
+        <!-- Parameters the configuration listens to -->
+        <section class="card">
+          <div class="card-head">
+            <h2>{{ t('dashboard.usedTitle') }}</h2>
+            <router-link to="/params" class="head-link">{{ t('dashboard.usedManage') }}</router-link>
+          </div>
+          <div class="used-list">
+            <div v-for="p in usedParams" :key="p.path" class="used-row">
+              <div class="used-top">
+                <span class="live-dot" :class="{ on: p.last_seen_ago != null && p.last_seen_ago < 2 }" />
+                <span class="used-path" :title="p.path">{{ shortPath(p.path) }}</span>
+                <span v-if="p.last_value !== undefined" class="used-val" :title="fmtAgo(p.last_seen_ago)">{{ fmtValue(p.last_value) }}</span>
+              </div>
+              <div class="used-tags">
+                <span v-for="(s, i) in p.sources" :key="i" class="used-tag" :class="[s.kind, { off: !s.enabled }]"
+                  :title="s.kind === 'overlimit' ? `${s.operator} ${s.value ?? ''}` : ''">{{ sourceLabel(s) }}</span>
+                <span v-if="p.last_seen_ago != null" class="used-ago">{{ fmtAgo(p.last_seen_ago) }}</span>
+                <span v-else-if="!p.wildcard" class="used-ago">{{ t('dashboard.usedNever') }}</span>
+              </div>
+            </div>
+            <div v-if="!usedParams.length" class="empty">{{ t('dashboard.usedNone') }}</div>
+          </div>
+        </section>
       </div>
     </div>
   </div>
@@ -437,7 +518,32 @@ onUnmounted(stopLive)
 .out-row + .out-row { margin-top: var(--sp-4); }
 .out-head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
 .bar-track { flex: 1; height: 6px; background: var(--track); border-radius: var(--radius-full); overflow: hidden; }
-.bar-fill { height: 100%; border-radius: var(--radius-full); background: var(--ch-color); transition: width 200ms linear; }
+.bar-track { position: relative; }
+.bar-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: var(--radius-full); background: var(--ch-color); transition: width 200ms linear; }
+.bar-over { position: absolute; top: 0; height: 100%; background: var(--warning); border-radius: 0 var(--radius-full) var(--radius-full) 0; transition: left 200ms linear, width 200ms linear; }
+.bar-mark { position: absolute; top: -2px; width: 2px; height: 10px; background: var(--text-muted); transform: translateX(-1px); }
+.over-val { color: var(--warning); font-weight: 600; margin-left: 2px; }
+.legend { display: flex; gap: var(--sp-4); margin-top: var(--sp-3); font-size: var(--text-xs); color: var(--text-muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 12px; height: 6px; border-radius: 3px; }
+.sw.base { background: linear-gradient(90deg, var(--ch-a-color) 50%, var(--ch-b-color) 50%); }
+.sw.over { background: var(--warning); }
+
+/* Used parameters */
+.head-link { font-size: var(--text-xs); color: var(--text-muted); }
+.used-list { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 360px; overflow-y: auto; }
+.used-row { padding: var(--sp-2); border-radius: var(--radius-sm); }
+.used-row:hover { background: var(--bg-hover); }
+.used-top { display: flex; align-items: center; gap: var(--sp-2); font-family: var(--font-mono); font-size: var(--text-xs); }
+.used-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.used-val { color: var(--text); font-variant-numeric: tabular-nums; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); opacity: 0.4; flex-shrink: 0; }
+.live-dot.on { background: var(--success); opacity: 1; }
+.used-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; padding-left: 14px; }
+.used-tag { font-size: var(--text-2xs); padding: 1px 6px; border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-secondary); }
+.used-tag.overlimit { background: var(--warning-surface, rgba(255, 170, 0, 0.12)); color: var(--warning); }
+.used-tag.off { opacity: 0.45; text-decoration: line-through; }
+.used-ago { font-size: var(--text-2xs); color: var(--text-muted); margin-left: auto; }
 .out-val { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
 .out-val strong { color: var(--text); }
 .wave-canvas { width: 100%; height: 72px; border-radius: var(--radius-md); display: block; }

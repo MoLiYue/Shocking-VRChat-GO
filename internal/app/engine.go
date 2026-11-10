@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -374,24 +375,29 @@ func (a *App) strengthBoostChecker(ctx context.Context) {
 }
 
 func (a *App) statusPusher(ctx context.Context) {
-	last := -1
-	for sleepCtx(ctx, 2*time.Second) {
+	// Push whenever the device state changes (connect/disconnect, strength,
+	// limit, overlimit boost) so the dashboard follows boosts as they decay.
+	last := ""
+	for sleepCtx(ctx, 250*time.Millisecond) {
 		if !a.Live.HasSubscribers("status") {
+			last = ""
 			continue
 		}
-		n := a.Hub.Count()
-		if n == last {
-			continue
-		}
-		last = n
 		devs := []map[string]any{}
 		for _, d := range a.Hub.Devices() {
 			s := d.Status()
 			devs = append(devs, map[string]any{
 				"strength": s.Strength, "strength_max": s.StrengthMax, "strength_limit": s.StrengthLimit,
+				"limit_boost": s.LimitBoost,
 			})
 		}
-		a.Live.Broadcast("status", map[string]any{"devices": devs, "engine_running": true})
+		msg := map[string]any{"devices": devs, "engine_running": true}
+		b, _ := json.Marshal(msg)
+		if string(b) == last {
+			continue
+		}
+		last = string(b)
+		a.Live.Broadcast("status", msg)
 	}
 }
 

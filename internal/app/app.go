@@ -57,6 +57,7 @@ type App struct {
 	overlimitRules     []any
 	overlimitState     []overlimitRuleState
 	oscParamState      map[string]any
+	oscParamSeen       map[string]time.Time
 	overlimitEffective map[string]int
 
 	curveMu sync.RWMutex
@@ -99,6 +100,7 @@ func New(baseDir string) *App {
 		boost:              map[string]int{"A": 0, "B": 0},
 		boostExpire:        map[string]time.Time{},
 		oscParamState:      map[string]any{},
+		oscParamSeen:       map[string]time.Time{},
 		overlimitEffective: map[string]int{"A": 0, "B": 0},
 		curves:             map[string][]handler.Point{},
 		ogbSeen:            map[[2]string]float64{},

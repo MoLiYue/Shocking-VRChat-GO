@@ -187,6 +187,7 @@ func (a *App) Handler() http.Handler {
 	h("GET /api/v1/strength_limit", func(*http.Request) (any, error) { return a.strengthLimitView(), nil })
 	h("POST /api/v1/strength_limit", a.apiStrengthLimitSet)
 	h("GET /api/v1/overlimit_rules", a.apiOverlimitGet)
+	h("GET /api/v1/params/used", a.apiParamsUsed)
 	h("POST /api/v1/overlimit_rules", a.apiOverlimitSet)
 	h("DELETE /api/v1/overlimit_rules/{index}", a.apiOverlimitDelete)
 	h("GET /api/v1/shock/{channel}/{second}", a.apiShock)

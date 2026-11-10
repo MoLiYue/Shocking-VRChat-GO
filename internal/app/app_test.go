@@ -963,3 +963,84 @@ func TestSettingsSaveRestartsOnlyOnChange(t *testing.T) {
 		t.Fatalf("log level change requested restart: %v", l)
 	}
 }
+
+// Change operators fire once per qualifying change (10 -> 11), not while
+// a comparison holds; the condition value is the minimum change.
+func TestOverlimitChangeOperators(t *testing.T) {
+	e := newEnv(t)
+	rule := func(name, op string, v float64) map[string]any {
+		return map[string]any{"name": name, "channel": "a", "limit_boost": 10, "decay_seconds": 5,
+			"condition": map[string]any{"param": "/c", "operator": op, "value": v}}
+	}
+	e.postJSON(t, "/api/v1/overlimit_rules", map[string]any{"rules": []any{
+		rule("changed", "changed", 0), rule("up2", "increased", 2), rule("down", "decreased", 0),
+	}})
+	a := e.a
+	fired := func() []bool {
+		a.overlimitMu.Lock()
+		defer a.overlimitMu.Unlock()
+		out := make([]bool, len(a.overlimitState))
+		for i, st := range a.overlimitState {
+			out[i] = !st.triggered.IsZero()
+			a.overlimitState[i].triggered = time.Time{} // reset for the next step
+		}
+		return out
+	}
+	steps := []struct {
+		v    any
+		want [3]bool
+	}{
+		{10.0, [3]bool{false, false, false}}, // first value: nothing to compare
+		{10.0, [3]bool{false, false, false}}, // unchanged
+		{11.0, [3]bool{true, false, false}},  // +1: changed, but below min 2 for "up2"
+		{13.0, [3]bool{true, true, false}},   // +2
+		{12.5, [3]bool{true, false, true}},   // decrease
+		{true, [3]bool{false, false, true}},  // bool true = 1 (12.5 -> 1)
+	}
+	steps[5].want[0] = true
+	for i, s := range steps {
+		a.overlimitOSCHook("/c", []any{s.v})
+		a.overlimitOSCHook("/other", []any{1.0}) // other params never fire these rules
+		got := fired()
+		if len(got) != 3 || got[0] != s.want[0] || got[1] != s.want[1] || got[2] != s.want[2] {
+			t.Fatalf("step %d (%v): fired %v, want %v", i, s.v, got, s.want)
+		}
+	}
+	// A change gives the full boost, which then decays (decay 0 is not
+	// "hold" for change rules: there is nothing to hold for).
+	a.overlimitOSCHook("/c", []any{20.0})
+	if b := func() map[string]int {
+		a.overlimitMu.Lock()
+		defer a.overlimitMu.Unlock()
+		return a.overlimitBoostsLocked(time.Now())
+	}(); b["A"] != 10 {
+		t.Fatalf("boost after change: %v", b)
+	}
+}
+
+func TestParamsUsed(t *testing.T) {
+	e := newEnv(t)
+	e.postJSON(t, "/api/v1/overlimit_rules", map[string]any{"rules": []any{map[string]any{
+		"name": "r1", "channel": "a", "limit_boost": 10, "decay_seconds": 5,
+		"condition": map[string]any{"param": "/avatar/parameters/Shock/TouchAreaA", "operator": "changed", "value": 0}}}})
+	e.a.overlimitOSCHook("/avatar/parameters/Shock/TouchAreaA", []any{0.5})
+	r := e.getJSON(t, "/api/v1/params/used")
+	found := false
+	for _, p := range config.AsList(r["params"]) {
+		m := config.AsMap(p)
+		if m["path"] != "/avatar/parameters/Shock/TouchAreaA" {
+			continue
+		}
+		found = true
+		kinds := map[string]bool{}
+		for _, s := range config.AsList(m["sources"]) {
+			kinds[config.Str(config.AsMap(s)["kind"], "")] = true
+		}
+		if !kinds["param"] || !kinds["overlimit"] || config.Float(m["last_value"], -1) != 0.5 {
+			t.Fatalf("entry: %v", m)
+		}
+	}
+	if !found {
+		t.Fatalf("TouchAreaA missing: %v", r)
+	}
+}

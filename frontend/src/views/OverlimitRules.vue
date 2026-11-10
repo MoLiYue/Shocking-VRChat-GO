@@ -102,6 +102,9 @@ const msg = ref('')
 const msgType = ref<'ok' | 'err'>('ok')
 
 const operators = ['==', '!=', '>', '<', '>=', '<=']
+// Momentary operators: fire once per change of the parameter (value = min change).
+const CHANGE_OPS = ['changed', 'increased', 'decreased']
+const isChangeOp = (op: string) => CHANGE_OPS.includes(op)
 
 const unsaved = useUnsaved(() => ({ rules: rules.value }))
 
@@ -195,9 +198,12 @@ onMounted(load)
           <div class="condition-row">
             <span class="cond-label">{{ t('overlimit.when') }}</span>
             <input type="text" v-model="rule.condition.param" class="cond-param" placeholder="/avatar/parameters/...">
-            <AppSelect v-model="rule.condition.operator" class="cond-op" :options="[...(operators).map((op) => ({ value: op, label: op }))]" />
-            <input type="number" v-model.number="rule.condition.value" class="cond-value" step="0.01">
+            <AppSelect v-model="rule.condition.operator" class="cond-op" :options="[...operators.map((op) => ({ value: op, label: op })), ...CHANGE_OPS.map((op) => ({ value: op, label: t('overlimit.op_' + op) }))]" />
+            <input type="number" v-model.number="rule.condition.value" class="cond-value" step="0.01" min="0"
+              :title="isChangeOp(rule.condition.operator) ? t('overlimit.minChange') : ''"
+              :aria-label="isChangeOp(rule.condition.operator) ? t('overlimit.minChange') : t('overlimit.condValue')">
           </div>
+          <p v-if="isChangeOp(rule.condition.operator)" class="change-hint">{{ t('overlimit.changeHint') }}</p>
           <div class="effect-row">
             <span class="cond-label">{{ t('overlimit.then') }}</span>
             <AppSelect v-model="rule.channel" class="effect-channel" :options="[{ value: 'a', label: t('overlimit.channelAOption') }, { value: 'b', label: t('overlimit.channelBOption') }, { value: 'both', label: t('overlimit.channelBothOption') }]" />
@@ -283,7 +289,8 @@ onMounted(load)
 .condition-row, .effect-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .cond-label { font-size: var(--text-sm); color: var(--accent); font-weight: 600; min-width: 24px; }
 .cond-param { flex: 1; min-width: 200px; font-size: var(--text-sm); }
-.cond-op { width: 84px; min-width: 0; }
+.cond-op { width: 110px; min-width: 0; }
+.change-hint { margin: 0 0 0 32px; font-size: var(--text-xs); color: var(--text-muted); }
 .cond-value { width: 80px; text-align: center; font-size: var(--text-sm); }
 .effect-channel { width: 130px; min-width: 0; }
 .effect-text { font-size: var(--text-sm); color: var(--text-secondary); }

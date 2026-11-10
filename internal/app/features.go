@@ -275,17 +275,61 @@ func evalCondition(cond config.M, state map[string]any) bool {
 	return false
 }
 
+// Change operators fire once per qualifying change of the parameter
+// (e.g. 10 -> 11) instead of while a comparison holds. The condition value
+// is the minimum change (0 = any change).
+var changeOperators = map[string]bool{"changed": true, "increased": true, "decreased": true}
+
+// paramChange describes the OSC update being processed (nil when rules
+// are re-evaluated without a new value, e.g. after saving them).
+type paramChange struct {
+	addr      string
+	prev, cur any
+}
+
+func changeFires(cond config.M, ch *paramChange) bool {
+	if ch == nil || ch.addr != config.Str(cond["param"], "") || ch.prev == nil {
+		return false
+	}
+	p, ok1 := config.ToFloat(ch.prev)
+	c, ok2 := config.ToFloat(ch.cur)
+	if !ok1 || !ok2 {
+		return false
+	}
+	minDelta := math.Max(0.001, math.Abs(config.Float(cond["value"], 0)))
+	d := c - p
+	switch config.Str(cond["operator"], "") {
+	case "changed":
+		return math.Abs(d) >= minDelta-1e-9
+	case "increased":
+		return d >= minDelta-1e-9
+	case "decreased":
+		return -d >= minDelta-1e-9
+	}
+	return false
+}
+
 // updateOverlimitTriggersLocked re-evaluates rule conditions, recording
-// false -> true transitions. Must be called with overlimitMu held.
-func (a *App) updateOverlimitTriggersLocked(now time.Time) {
+// false -> true transitions (and qualifying changes for change
+// operators). Must be called with overlimitMu held.
+func (a *App) updateOverlimitTriggersLocked(now time.Time, ch *paramChange) {
 	if len(a.overlimitState) != len(a.overlimitRules) {
 		a.overlimitState = make([]overlimitRuleState, len(a.overlimitRules))
 	}
 	for i, r := range a.overlimitRules {
 		rule := config.AsMap(r)
-		on := rule != nil && config.Bool(orTrue(rule["enabled"]), true) &&
-			evalCondition(config.AsMap(rule["condition"]), a.oscParamState)
 		st := &a.overlimitState[i]
+		enabled := rule != nil && config.Bool(orTrue(rule["enabled"]), true)
+		cond := config.AsMap(rule["condition"])
+		if changeOperators[config.Str(cond["operator"], "")] {
+			// Momentary: each change re-arms the full boost, then it decays.
+			if enabled && changeFires(cond, ch) {
+				st.triggered = now
+			}
+			st.active = false
+			continue
+		}
+		on := enabled && evalCondition(cond, a.oscParamState)
 		if on && !st.active {
 			st.triggered = now
 		}
@@ -308,6 +352,9 @@ func (a *App) overlimitBoostsLocked(now time.Time) map[string]int {
 		}
 		full := config.ClampInt(config.Int(rule["limit_boost"], 0), 0, 200)
 		decay := config.Float(rule["decay_seconds"], defaultOverlimitDecay)
+		if decay <= 0 && changeOperators[config.Str(config.Get(rule, "condition", "operator"), "")] {
+			decay = defaultOverlimitDecay // a change has no duration to hold for
+		}
 		var v int
 		if decay <= 0 {
 			if st.active {
@@ -439,18 +486,25 @@ func orTrue(v any) any {
 func (a *App) overlimitOSCHook(addr string, args []any) {
 	a.overlimitMu.Lock()
 	defer a.overlimitMu.Unlock()
+	var ch *paramChange
 	if len(args) > 0 {
+		ch = &paramChange{addr: addr, prev: a.oscParamState[addr], cur: args[0]}
 		a.oscParamState[addr] = args[0]
+		a.oscParamSeen[addr] = time.Now()
 	}
 	if len(a.overlimitRules) > 0 {
-		a.updateOverlimitTriggersLocked(time.Now())
+		a.updateOverlimitTriggersLocked(time.Now(), ch)
 	}
 }
 
 func (a *App) apiOverlimitGet(*http.Request) (any, error) {
 	a.overlimitMu.Lock()
 	defer a.overlimitMu.Unlock()
-	return map[string]any{"rules": a.overlimitRules, "effective": a.overlimitEffective}, nil
+	// Copies: the response is encoded after the lock is released, while
+	// overlimitTick keeps writing overlimitEffective (a concurrent map
+	// read/write is a fatal, unrecoverable runtime error).
+	return map[string]any{"rules": config.DeepCopy(a.overlimitRules),
+		"effective": map[string]int{"A": a.overlimitEffective["A"], "B": a.overlimitEffective["B"]}}, nil
 }
 
 func (a *App) apiOverlimitSet(r *http.Request) (any, error) {
@@ -472,9 +526,9 @@ func (a *App) apiOverlimitSet(r *http.Request) (any, error) {
 	// Edited rules start fresh: a condition that is already true counts
 	// as a new trigger.
 	a.overlimitState = nil
-	a.updateOverlimitTriggersLocked(time.Now())
+	a.updateOverlimitTriggersLocked(time.Now(), nil)
 	logx.Info("[config] Overlimit rules saved: %d rules", len(rules))
-	return map[string]any{"success": true, "rules": rules}, nil
+	return map[string]any{"success": true, "rules": config.DeepCopy(rules)}, nil
 }
 
 func (a *App) apiOverlimitDelete(r *http.Request) (any, error) {
@@ -500,7 +554,7 @@ func (a *App) apiOverlimitDelete(r *http.Request) (any, error) {
 		name = removed["name"]
 	}
 	logx.Info("[config] Overlimit rule deleted: %v", name)
-	return map[string]any{"success": true, "rules": a.overlimitRules}, nil
+	return map[string]any{"success": true, "rules": config.DeepCopy(a.overlimitRules)}, nil
 }
 
 // ---------------------------------------------------------------- profiles
@@ -595,4 +649,51 @@ func (a *App) apiProfileDelete(r *http.Request) (any, error) {
 		return nil, httpErr(404, "Not found")
 	}
 	return map[string]any{"success": true}, nil
+}
+
+// ---------------------------------------------------------------- used params
+
+// apiParamsUsed lists every OSC parameter the configuration listens to
+// (parameter mapping per channel and overlimit rule conditions), with its
+// last received value and when it arrived.
+func (a *App) apiParamsUsed(*http.Request) (any, error) {
+	type source = map[string]any
+	byPath := map[string][]source{}
+	order := []string{}
+	add := func(path string, s source) {
+		if path == "" {
+			return
+		}
+		if _, ok := byPath[path]; !ok {
+			order = append(order, path)
+		}
+		byPath[path] = append(byPath[path], s)
+	}
+	for _, ch := range config.Channels {
+		for _, p := range config.AsList(a.Cfg.Get("dglab3", ch, "avatar_params")) {
+			m := config.AsMap(p)
+			add(config.Str(m["path"], ""), source{"kind": "param", "channel": strings.ToUpper(strings.TrimPrefix(ch, "channel_")),
+				"mode": config.Str(m["mode"], "distance"), "enabled": config.Bool(m["enabled"], true)})
+		}
+	}
+	a.overlimitMu.Lock()
+	defer a.overlimitMu.Unlock()
+	for _, r := range a.overlimitRules {
+		rule := config.AsMap(r)
+		cond := config.AsMap(rule["condition"])
+		add(config.Str(cond["param"], ""), source{"kind": "overlimit", "rule": config.Str(rule["name"], ""),
+			"channel": strings.ToUpper(config.Str(rule["channel"], "both")), "operator": config.Str(cond["operator"], "=="),
+			"value": cond["value"], "enabled": config.Bool(orTrue(rule["enabled"]), true)})
+	}
+	out := make([]any, 0, len(order))
+	now := time.Now()
+	for _, path := range order {
+		e := map[string]any{"path": path, "sources": byPath[path], "wildcard": strings.Contains(path, "*")}
+		if v, ok := a.oscParamState[path]; ok {
+			e["last_value"] = v
+			e["last_seen_ago"] = now.Sub(a.oscParamSeen[path]).Seconds()
+		}
+		out = append(out, e)
+	}
+	return map[string]any{"params": out}, nil
 }
