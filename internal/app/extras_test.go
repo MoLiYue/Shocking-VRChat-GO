@@ -223,3 +223,135 @@ func TestSteamVRAutostart(t *testing.T) {
 		t.Fatal("broken appconfig was overwritten")
 	}
 }
+
+func TestParseHRMeasurement(t *testing.T) {
+	for _, c := range []struct {
+		b    []byte
+		bpm  int
+		ok   bool
+		name string
+	}{
+		{[]byte{0x00, 72}, 72, true, "uint8"},
+		{[]byte{0x01, 0x2C, 0x01}, 300, true, "uint16 LE"},
+		{[]byte{0x16, 95, 0x10, 0x03}, 95, true, "uint8 + RR intervals"},
+		{[]byte{0x00, 0}, 0, false, "zero"},
+		{[]byte{0x01, 0x2C}, 0, false, "short uint16"},
+		{[]byte{0x00}, 0, false, "empty"},
+	} {
+		if bpm, ok := parseHRMeasurement(c.b); bpm != c.bpm || ok != c.ok {
+			t.Errorf("%s: got %d %v", c.name, bpm, ok)
+		}
+	}
+}
+
+// Without a Bluetooth adapter the receiver reports an error instead of
+// failing; settings are validated.
+func TestBLEHRSettings(t *testing.T) {
+	e := newEnv(t)
+	t.Cleanup(e.a.stopBLEHR)
+	if r := e.postJSON(t, "/api/v1/ble_hr", map[string]any{"min_bpm": 150, "max_bpm": 100}); r["_status"] != 400 {
+		t.Fatalf("bad range accepted %v", r)
+	}
+	r := e.postJSON(t, "/api/v1/ble_hr", map[string]any{"enabled": true, "device": "aa:bb:cc:dd:ee:ff", "device_name": "Strap"})
+	if r["enabled"] != true || r["device"] != "AA:BB:CC:DD:EE:FF" {
+		t.Fatalf("set %v", r)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		g := e.getJSON(t, "/api/v1/ble_hr")
+		if s := config.Str(g["status"], ""); s == "error" || s == "scanning" {
+			break // no adapter here: error; with one: scanning
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status %v", g)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	e.postJSON(t, "/api/v1/ble_hr", map[string]any{"enabled": false})
+	if g := e.getJSON(t, "/api/v1/ble_hr"); g["status"] != "off" {
+		t.Fatalf("after disable %v", g["status"])
+	}
+}
+
+func TestNormaliseHypeRateID(t *testing.T) {
+	for in, want := range map[string]string{
+		"ABCD": "ABCD", " ab12 ": "ab12", "https://app.hyperate.io/ABCD": "ABCD",
+		"app.hyperate.io/ABCD/?x=1": "ABCD", "hyperate.io/ABCD#y": "ABCD", "": "", "a b": "", "x/../": "",
+	} {
+		if got := normaliseHypeRateID(in); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Fake HypeRate (Phoenix channel): join hr:<id>, heartbeat, hr_update.
+func TestHypeRate(t *testing.T) {
+	up := websocket.Upgrader{}
+	joined := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("token") != "dev-key-9876" {
+			w.WriteHeader(403)
+			return
+		}
+		c, err := up.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_, raw, err := c.ReadMessage()
+		if err != nil {
+			return
+		}
+		var m map[string]any
+		_ = json.Unmarshal(raw, &m)
+		joined <- config.Str(m["topic"], "") + "/" + config.Str(m["event"], "")
+		_ = c.WriteJSON(map[string]any{"topic": m["topic"], "event": "phx_reply", "payload": map[string]any{"status": "ok"}, "ref": m["ref"]})
+		for i := 0; i < 40; i++ {
+			if c.WriteJSON(map[string]any{"topic": m["topic"], "event": "hr_update", "payload": map[string]any{"hr": 88}}) != nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+	old := hyperateURL
+	hyperateURL = "ws" + strings.TrimPrefix(srv.URL, "http")
+	defer func() { hyperateURL = old }()
+	e := newEnv(t)
+	if r := e.postJSON(t, "/api/v1/hyperate", map[string]any{"session_id": "not valid!"}); r["_status"] != 400 {
+		t.Fatalf("invalid id accepted %v", r)
+	}
+	r := e.postJSON(t, "/api/v1/hyperate", map[string]any{"enabled": true, "session_id": "https://app.hyperate.io/AB12", "api_key": "dev-key-9876"})
+	t.Cleanup(e.a.stopHypeRate)
+	if r["session_id"] != "AB12" || r["has_key"] != true || r["api_key"] != nil {
+		t.Fatalf("set %v", r)
+	}
+	select {
+	case j := <-joined:
+		if j != "hr:AB12/phx_join" {
+			t.Fatalf("joined %q", j)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no join")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		g := e.getJSON(t, "/api/v1/hyperate")
+		e.a.overlimitMu.Lock()
+		bpm := e.a.oscParamState[hrParamPrefix+"BPM"]
+		e.a.overlimitMu.Unlock()
+		if g["connected"] == true && config.Int(g["bpm"], 0) == 88 && config.Int(bpm, 0) == 88 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status %v bpm param %v", g, bpm)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	resp, _ := http.Get(e.web.URL + "/api/v1/config/export")
+	exp, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(exp), "dev-key-9876") {
+		t.Fatal("API key leaked through export")
+	}
+}

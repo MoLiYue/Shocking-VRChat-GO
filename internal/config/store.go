@@ -155,6 +155,24 @@ func DefaultAdvanced() M {
 			"trigger_sfx":       false,
 			"message_template":  "Shocking VRChat ⚡ A:{strength_a} B:{strength_b}",
 		},
+		// Optional Bluetooth heart rate (see internal/app/ble_hr.go).
+		"ble_hr": M{
+			"enabled":        false,
+			"device":         "", // address; "" = first heart-rate device found
+			"device_name":    "",
+			"min_bpm":        40.0,
+			"max_bpm":        200.0,
+			"send_to_vrchat": true,
+		},
+		// Optional HypeRate heart rate (see internal/app/hyperate.go).
+		"hyperate": M{
+			"enabled":        false,
+			"session_id":     "",
+			"api_key":        "",
+			"min_bpm":        40.0,
+			"max_bpm":        200.0,
+			"send_to_vrchat": true,
+		},
 		// Optional Pulsoid heart rate (see internal/app/pulsoid.go).
 		"pulsoid": M{
 			"enabled":        false,

@@ -157,11 +157,26 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 	return map[string]any{"success": true, "restart_needed": list, "message": msg}, nil
 }
 
+// secretKeys are config values that never leave the program.
+var secretKeys = [][2]string{{"pulsoid", "token"}, {"hyperate", "api_key"}}
+
+// keepSecrets copies our secrets into a config about to replace ours when
+// it has none (exports and older profiles never contain them).
+func (a *App) keepSecrets(adv config.M) {
+	for _, s := range secretKeys {
+		if config.Str(config.Get(adv, s[0], s[1]), "") == "" {
+			config.Sub(adv, true, s[0])[s[1]] = a.Cfg.Get(s[0], s[1])
+		}
+	}
+}
+
 // redactSecrets removes secrets (Pulsoid token) from a config copy that is
 // returned to the UI or exported.
 func redactSecrets(adv config.M) config.M {
-	if p := config.AsMap(adv["pulsoid"]); p != nil {
-		p["token"] = ""
+	for _, s := range secretKeys {
+		if p := config.AsMap(adv[s[0]]); p != nil {
+			p[s[1]] = ""
+		}
 	}
 	return adv
 }
@@ -236,7 +251,7 @@ func (a *App) apiConfigImport(r *http.Request) (any, error) {
 	}
 	config.Sub(newAdv, true, "ws")["master_uuid"] = a.Cfg.Get("ws", "master_uuid")
 	// secrets are never exported, so keep ours
-	config.Sub(newAdv, true, "pulsoid")["token"] = a.Cfg.Get("pulsoid", "token")
+	a.keepSecrets(newAdv)
 	newAdv["version"] = config.FileVersion
 	newBasic["version"] = config.FileVersion
 	for _, ch := range config.Channels {

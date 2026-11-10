@@ -152,6 +152,8 @@ func main() {
 	go a.HotReloadLoop(ctx)
 	a.StartChatboxIfEnabled()
 	a.StartPulsoidIfEnabled()
+	a.StartBLEHRIfEnabled()
+	a.StartHypeRateIfEnabled()
 	go a.ApplySteamVRAutostart()
 
 	countEnabled := func(ch string) int {

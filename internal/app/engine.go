@@ -642,9 +642,17 @@ func (a *App) applySettings(adv, basic config.M) {
 		adv["web_server"] = oldAdv["web_server"]
 	}
 	pulsoidChanged := !config.Equal(adv["pulsoid"], oldAdv["pulsoid"])
+	bleChanged := !config.Equal(adv["ble_hr"], oldAdv["ble_hr"])
+	hyperateChanged := !config.Equal(adv["hyperate"], oldAdv["hyperate"])
 	a.Cfg.Replace(adv, basic)
 	if pulsoidChanged {
 		go a.StartPulsoidIfEnabled()
+	}
+	if bleChanged {
+		go a.StartBLEHRIfEnabled()
+	}
+	if hyperateChanged {
+		go a.StartHypeRateIfEnabled()
 	}
 	a.refreshServerIP()
 	a.applyLogLevel()

@@ -171,9 +171,12 @@ func (a *App) pulsoidSession(ctx context.Context, token string) error {
 	}
 }
 
-// heartRateNormalised maps bpm to 0..1 between the configured bounds.
-func (a *App) heartRateNormalised(bpm int) float64 {
-	c := a.pulsoidCfg()
+// Heart-rate parameters published inside the program. HeartRate/* is set
+// by whichever source is active (Pulsoid or Bluetooth); Pulsoid/* is kept
+// for setups made before Bluetooth support.
+const hrParamPrefix = "/avatar/parameters/HeartRate/"
+
+func normaliseBPM(c config.M, bpm int) float64 {
 	lo := config.Float(c["min_bpm"], 40)
 	hi := config.Float(c["max_bpm"], 200)
 	if hi <= lo {
@@ -182,22 +185,34 @@ func (a *App) heartRateNormalised(bpm int) float64 {
 	return config.Clamp((float64(bpm)-lo)/(hi-lo), 0, 1)
 }
 
-// publishHeartRate injects the virtual parameters and optionally sends the
-// VRCOSC-compatible ones to VRChat.
+func (a *App) heartRateNormalised(bpm int) float64 { return normaliseBPM(a.pulsoidCfg(), bpm) }
+
 func (a *App) publishHeartRate(bpm int, connected bool) {
+	a.publishHR("pulsoid", a.pulsoidCfg(), bpm, connected)
+}
+
+// publishHR injects the virtual parameters for a source and optionally
+// sends the VRCOSC-compatible ones to VRChat.
+func (a *App) publishHR(source string, c config.M, bpm int, connected bool) {
 	norm := 0.0
 	if connected {
-		norm = a.heartRateNormalised(bpm)
+		norm = normaliseBPM(c, bpm)
 	}
 	a.Engine.stateMu.Lock()
 	srv := a.Engine.oscSrv
 	a.Engine.stateMu.Unlock()
 	if srv != nil {
-		srv.Inject(pulsoidParamPrefix+"HeartRate", norm)
-		srv.Inject(pulsoidParamPrefix+"BPM", bpm)
-		srv.Inject(pulsoidParamPrefix+"Connected", connected)
+		prefixes := []string{hrParamPrefix}
+		if source == "pulsoid" {
+			prefixes = append(prefixes, pulsoidParamPrefix)
+		}
+		for _, p := range prefixes {
+			srv.Inject(p+"HeartRate", norm)
+			srv.Inject(p+"BPM", bpm)
+			srv.Inject(p+"Connected", connected)
+		}
 	}
-	if !config.Bool(a.pulsoidCfg()["send_to_vrchat"], true) {
+	if !config.Bool(c["send_to_vrchat"], true) {
 		return
 	}
 	host, port := a.oscSendTarget()
@@ -237,7 +252,7 @@ func (a *App) apiPulsoidGet(*http.Request) (any, error) {
 		"send_to_vrchat": config.Bool(c["send_to_vrchat"], true),
 		"running":        a.pulsoid.cancel != nil, "connected": a.pulsoid.connected,
 		"bpm": a.pulsoid.bpm, "last_at": last, "error": a.pulsoid.err,
-		"params": []string{pulsoidParamPrefix + "HeartRate", pulsoidParamPrefix + "BPM", pulsoidParamPrefix + "Connected"},
+		"params": []string{hrParamPrefix + "HeartRate", hrParamPrefix + "BPM", hrParamPrefix + "Connected"},
 	}, nil
 }
 
