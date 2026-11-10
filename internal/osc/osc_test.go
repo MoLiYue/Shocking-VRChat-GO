@@ -102,3 +102,42 @@ func TestServerClient(t *testing.T) {
 		t.Fatal("no message")
 	}
 }
+
+// Packets are forwarded unchanged to the configured targets; injected
+// messages are dispatched but not forwarded.
+func TestServerForwardAndInject(t *testing.T) {
+	got := make(chan string, 4)
+	d := &Dispatcher{}
+	d.Map("/a", func(addr string, _ []any) { got <- addr })
+	d.Map("/v", func(addr string, _ []any) { got <- addr })
+	srv, err := Listen("127.0.0.1", 0, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	tgt, _ := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	defer tgt.Close()
+	fc, _ := net.DialUDP("udp", nil, tgt.LocalAddr().(*net.UDPAddr))
+	srv.SetForward([]*net.UDPConn{fc})
+	pkt, _ := Encode("/a", float32(0.5))
+	c, _ := net.Dial("udp", srv.LocalAddr().String())
+	defer c.Close()
+	_, _ = c.Write(pkt)
+	buf := make([]byte, 256)
+	_ = tgt.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _, err := tgt.ReadFrom(buf)
+	if err != nil || string(buf[:n]) != string(pkt) {
+		t.Fatalf("forwarded %q err=%v", buf[:n], err)
+	}
+	if a := <-got; a != "/a" {
+		t.Fatal(a)
+	}
+	srv.Inject("/v", 1.0)
+	if a := <-got; a != "/v" {
+		t.Fatal(a)
+	}
+	_ = tgt.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	if _, _, err := tgt.ReadFrom(buf); err == nil {
+		t.Fatal("injected message must not be forwarded")
+	}
+}

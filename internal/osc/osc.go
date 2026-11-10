@@ -309,6 +309,30 @@ type Server struct {
 	conn *net.UDPConn
 	d    atomic.Pointer[Dispatcher]
 	wg   sync.WaitGroup
+	// fwd: every received packet is also sent unchanged to these targets
+	// (OSC router: other apps can still get VRChat's output although only
+	// one program can listen on its port).
+	fwd atomic.Pointer[[]*net.UDPConn]
+}
+
+// SetForward replaces the forward targets (nil/empty = none); the old
+// sockets are closed.
+func (s *Server) SetForward(conns []*net.UDPConn) {
+	var p *[]*net.UDPConn
+	if len(conns) > 0 {
+		p = &conns
+	}
+	if old := s.fwd.Swap(p); old != nil {
+		for _, c := range *old {
+			_ = c.Close()
+		}
+	}
+}
+
+// Inject dispatches a message as if it had been received (virtual
+// parameters such as the Pulsoid heart rate). Not forwarded.
+func (s *Server) Inject(addr string, args ...any) {
+	s.dispatchSafe(Message{Address: addr, Args: args})
 }
 
 // Listen starts serving on host:port.
@@ -340,6 +364,11 @@ func (s *Server) loop() {
 			}
 			continue
 		}
+		if f := s.fwd.Load(); f != nil {
+			for _, c := range *f {
+				_, _ = c.Write(buf[:n]) // UDP: a closed target just drops
+			}
+		}
 		msgs, err := Parse(buf[:n])
 		if err != nil {
 			logx.Debug("[osc] bad packet: %v", err)
@@ -369,4 +398,5 @@ func (s *Server) LocalAddr() net.Addr { return s.conn.LocalAddr() }
 func (s *Server) Close() {
 	_ = s.conn.Close()
 	s.wg.Wait()
+	s.SetForward(nil)
 }
