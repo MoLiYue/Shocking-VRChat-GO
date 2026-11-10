@@ -4,6 +4,7 @@ import { ref, onMounted } from 'vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 import { confirmDialog } from '@/dialog'
+import AdvancedSection from '@/components/AdvancedSection.vue'
 
 const { t } = useI18n()
 // embedded: shown as a section of the combined setup page (Setup.vue)
@@ -140,30 +141,27 @@ onMounted(load)
       </section>
     </div>
 
-    <div class="status-bar" v-if="msg">
+    <div class="foot">
       <span class="msg" :class="{ ok: msgType === 'ok', err: msgType === 'err' }">{{ msg }}</span>
     </div>
-
-    <div class="info-card card">
-      <h3>{{ t('strength.infoTitle') }}</h3>
-      <ul>
+    <!-- background info, collapsed (the overlimit rules are right below) -->
+    <AdvancedSection :title="t('strength.infoTitle')">
+      <ul class="info-list">
         <li><code>{{ t('strength.info1') }}</code></li>
         <li>{{ t('strength.info2') }}</li>
         <li>{{ t('strength.info3') }}</li>
         <li>{{ t('strength.info4') }}</li>
       </ul>
-      <h3 style="margin-top:var(--sp-4)">{{ t('strength.overlimitTitle') }}</h3>
-      <ul>
-        <li><router-link :to="props.embedded ? { path: '/params', hash: '#overlimit' } : '/overlimit-rules'">{{ t('strength.overlimit1') }}</router-link></li>
-        <li>{{ t('strength.overlimit2') }}</li>
-        <li>{{ t('strength.overlimit4') }}</li>
-      </ul>
-    </div>
+    </AdvancedSection>
   </div>
 </template>
 
 <style scoped>
-.recommend-banner { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-4); margin-bottom: var(--sp-5); background: rgba(var(--accent-rgb), 0.08); border: 1px solid rgba(var(--accent-rgb), 0.25); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
+.foot { min-height: 20px; text-align: right; margin-top: calc(-1 * var(--sp-2)); }
+.info-list { padding-left: var(--sp-4); font-size: var(--text-sm); color: var(--text-label); }
+.info-list li { margin-bottom: var(--sp-2); line-height: 1.6; }
+.info-list code { background: var(--bg-tertiary); padding: 2px 6px; border-radius: var(--radius-sm); font-size: var(--text-xs); }
+.recommend-banner { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4); background: rgba(var(--accent-rgb), 0.08); border: 1px solid rgba(var(--accent-rgb), 0.25); border-radius: var(--radius-lg); font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
 .recommend-icon { color: var(--warning); flex-shrink: 0; margin-top: 2px; }
 .recommend-banner strong { color: var(--accent); }
 .limit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-bottom: var(--sp-4); align-items: stretch; }

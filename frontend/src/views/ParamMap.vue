@@ -5,7 +5,7 @@
 // become one row; different settings per channel stay separate rows).
 import AppSelect from '@/components/AppSelect.vue'
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
-import { computed, reactive, ref, onMounted, onActivated } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { api } from '@/api'
 import { useI18n } from '@/i18n'
 import { useUnsaved } from '@/unsaved'
@@ -32,7 +32,6 @@ const CHANNELS: Ch[] = ['a', 'b']
 
 const rows = ref<Row[]>([])
 const defaultMode = reactive<Record<Ch, string>>({ a: 'distance', b: 'distance' })
-const limits = reactive<Record<Ch, number>>({ a: 0, b: 0 })
 const saving = ref(false)
 /** Row errors from the server, by row index */
 const rowErrors = ref<Record<number, string>>({})
@@ -49,7 +48,6 @@ const editMode = ref('distance')
 const editError = ref('')
 
 const modeOptions = computed(() => [...MODES, RANGES].map((m) => ({ value: m, label: modeLabel(m) })))
-const defaultModeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
 const mixModeOptions = computed(() => MODES.map((m) => ({ value: m, label: modeLabel(m) })))
 
 // Auto-saved: add / remove / toggles / confirmed edits / mode and range
@@ -118,7 +116,6 @@ async function load() {
   for (const c of CHANNELS) {
     const d = await api(`/api/v1/params/${c}`)
     defaultMode[c] = d.default_mode || 'distance'
-    limits[c] = d.strength_limit ?? 0
     for (const p of d.params || []) {
       const s: Settings = {
         ...(typeof p === 'string' ? {} : p),
@@ -242,14 +239,6 @@ const count = computed(() => ({
 
 onMounted(load)
 
-// Kept alive: refresh the read-only limits when returning from the Strength page.
-onActivated(async () => {
-  try {
-    const d = await api('/api/v1/strength_limit')
-    limits.a = d.channel_a ?? limits.a
-    limits.b = d.channel_b ?? limits.b
-  } catch {}
-})
 </script>
 
 <template>
@@ -260,23 +249,6 @@ onActivated(async () => {
     </template>
 
     <section class="channel-section">
-      <div class="settings-row">
-        <div v-for="c in CHANNELS" :key="c" class="setting">
-          <label><span class="ch-tag sm" :class="'ch-' + c">{{ c.toUpperCase() }}</span> {{ t('params.defaultMode') }}</label>
-          <AppSelect v-model="defaultMode[c]" :options="defaultModeOptions" />
-        </div>
-        <div v-for="c in (props.embedded ? [] : CHANNELS)" :key="'l' + c" class="setting">
-          <label><span class="ch-tag sm" :class="'ch-' + c">{{ c.toUpperCase() }}</span> {{ t('params.strengthLimit') }}</label>
-          <router-link to="/strength" class="readonly-value" :title="t('params.strengthLimitHint')">
-            <span>{{ limits[c] }}</span><span class="readonly-link">{{ t('params.strengthLimitEdit') }} →</span>
-          </router-link>
-        </div>
-      </div>
-
-      <div class="count-row">
-        <span class="count">{{ t('params.countUnified', { a: count.a, b: count.b, total: count.total }) }}</span>
-      </div>
-
       <table>
         <thead>
           <tr>
@@ -373,17 +345,17 @@ onActivated(async () => {
       <div v-if="addError" class="row-error add-error">{{ addError }}</div>
     </section>
 
-    <p class="hint">{{ t('params.addHint') }}</p>
-
-    <div class="save-bar sticky">
+    <div class="foot">
+      <span class="hint">{{ t('params.addHint') }}</span>
+      <span class="count">{{ t('params.countUnified', { a: count.a, b: count.b, total: count.total }) }}</span>
       <span data-tour="param-save"><AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" /></span>
-      <span v-if="saving" class="save-hint">…</span>
-      <span class="save-hint">{{ t('params.liveHint') }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
+.foot { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; margin-top: calc(-1 * var(--sp-2)); }
+.foot .count { margin-left: auto; }
 .ranges-row td { padding-top: 0; }
 .ranges-bar { position: relative; height: 18px; border-radius: var(--radius-sm); background: var(--bg-inset); margin: 4px 0 8px; overflow: hidden; }
 .ranges-seg { position: absolute; top: 0; height: 100%; font-size: var(--text-2xs); line-height: 18px; text-align: center; color: var(--text); background: rgba(var(--accent-rgb), 0.18); border-right: 1px solid var(--bg-card); overflow: hidden; white-space: nowrap; }

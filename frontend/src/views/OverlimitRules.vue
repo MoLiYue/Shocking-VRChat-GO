@@ -2,8 +2,9 @@
 import AppSelect from '@/components/AppSelect.vue'
 import { useUnsaved } from '@/unsaved'
 import AutoSaveStatus from '@/components/AutoSaveStatus.vue'
-import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-vue-next'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import AdvancedSection from '@/components/AdvancedSection.vue'
 import { api, apiPost } from '@/api'
 import { useI18n } from '@/i18n'
 
@@ -189,6 +190,18 @@ function moveDown(index: number) {
 }
 
 onMounted(load)
+
+// The effective boost decays over time: keep the status chips live while
+// the page is shown (replaces the old manual refresh button).
+let effTimer = 0
+async function pollEffective() {
+  try { effective.value = (await api('/api/v1/overlimit_rules')).effective || effective.value } catch {}
+}
+function startEff() { clearInterval(effTimer); effTimer = window.setInterval(pollEffective, 1000) }
+onMounted(startEff)
+onActivated(startEff)
+onDeactivated(() => clearInterval(effTimer))
+onUnmounted(() => clearInterval(effTimer))
 </script>
 
 <template>
@@ -202,7 +215,6 @@ onMounted(load)
       <span class="status-label">{{ t('overlimit.currentEffective') }}</span>
       <span class="status-chip" :class="{ active: effective.A > 0 }">A: {{ effective.A > 0 ? '+' + effective.A : '—' }}</span>
       <span class="status-chip" :class="{ active: effective.B > 0 }">B: {{ effective.B > 0 ? '+' + effective.B : '—' }}</span>
-      <button class="icon-action" @click="load" :title="t('overlimit.refreshStatus')" :aria-label="t('overlimit.refreshStatus')"><RefreshCw :size="14" /></button>
     </div>
 
     <div class="rules-list">
@@ -274,15 +286,14 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="save-bar sticky">
+    <div class="foot">
       <button class="btn btn-ghost" @click="addRule"><Plus :size="15" />{{ t('overlimit.addRule') }}</button>
-      <button class="btn btn-ghost" @click="load"><RotateCcw :size="14" />{{ t('overlimit.reloadAll') }}</button>
       <AutoSaveStatus :state="unsaved.state.value" @retry="unsaved.flush()" />
       <span class="msg" :class="{ ok: msgType === 'ok', err: msgType === 'err' }">{{ msg }}</span>
     </div>
 
-    <div class="info-card card">
-      <h3>{{ t('overlimit.infoTitle') }}</h3>
+    <AdvancedSection :title="t('overlimit.infoTitle')">
+    <div class="info-card">
       <ul>
         <li><strong>{{ t('overlimit.infoCondition') }}</strong>：{{ t('overlimit.infoConditionDesc') }}</li>
         <li><strong>{{ t('overlimit.infoEffect') }}</strong>：{{ t('overlimit.infoEffectDesc') }}</li>
@@ -297,10 +308,12 @@ onMounted(load)
         <li><code>/avatar/parameters/Shock/OverrideMax == 1</code> → {{ t('overlimit.infoExample3') }}</li>
       </ul>
     </div>
+    </AdvancedSection>
   </div>
 </template>
 
 <style scoped>
+.foot { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
 .status-bar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); padding: var(--sp-3) var(--sp-4); background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .status-label { font-size: var(--text-sm); color: var(--text-muted); }
 .status-chip { font-size: var(--text-sm); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-full); background: var(--bg-tertiary); color: var(--text-muted); font-variant-numeric: tabular-nums; }
