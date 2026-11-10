@@ -451,7 +451,7 @@ func extractZip(path, dir string) error {
 func updateScript(pid int, exeDir, exePath, srcDir, tmpDir string) string {
 	// User data that must survive an update untouched.
 	userDirs := `"_backup" "wave_presets" "dg-lab" "profiles" "recordings"`
-	userFiles := fmt.Sprintf(`"%s" "%s" "curve_config.yaml" "overlimit_rules.yaml" "window_state.json" "shocking_vrchat.log*" "error.log" "update.log"`,
+	userFiles := fmt.Sprintf(`"%s" "%s" "curve_config.yaml" "overlimit_rules.yaml" "window_state.json" "shocking_vrchat.log*" "error.log" "crash.log" "update.log"`,
 		config.FileAdvanced, config.FileBasic)
 	// robocopy defaults to 1,000,000 retries x 30 s on a locked file, which
 	// would hang the (hidden) updater forever.

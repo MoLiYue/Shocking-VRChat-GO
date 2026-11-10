@@ -349,6 +349,7 @@ func (r *V4Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	logx.Success("[v4] APP connected: %s (slot target: %s)", clientID, tid)
 
 	go func() {
+		defer logx.Recover("v4 devices.get")
 		select {
 		case <-d.closed:
 		case <-time.After(time.Second):

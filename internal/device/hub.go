@@ -179,6 +179,7 @@ func (h *Hub) fanout(what string, fn func(Device) error) {
 		wg.Add(1)
 		go func(d Device) {
 			defer wg.Done()
+			defer logx.Recover("device " + what)
 			if err := fn(d); err != nil {
 				logx.Warn("[ws] Device %s %s failed: %v", d.ID(), what, err)
 			}
@@ -284,6 +285,7 @@ func (h *Hub) RefreshLimits(l Limits) {
 }
 
 func (h *Hub) applyLimits(devs []Device) {
+	defer logx.Recover("apply limits")
 	for _, d := range devs {
 		for _, ch := range []string{"A", "B"} {
 			s := d.state()

@@ -101,6 +101,7 @@ func main() {
 	_ = os.MkdirAll(base, 0o755)
 	_ = logx.OpenFile(filepath.Join(base, "shocking_vrchat.log"))
 	defer logx.Close()
+	setupCrashLog(base)
 	logx.Info("[init] Shocking VRChat %s (Go %s, %s/%s) dir=%s", app.Version, runtime.Version(), runtime.GOOS, runtime.GOARCH, base)
 
 	if n, err := assets.ExtractDefaults(base); err != nil {
@@ -278,4 +279,22 @@ func pick(a *app.App, zh, en string) string {
 		return en
 	}
 	return zh
+}
+
+// setupCrashLog sends Go runtime crash reports (unrecovered panics and
+// fatal errors such as concurrent map writes, with all goroutine stacks)
+// to crash.log. A windowsgui exe has no console, so without this a crash
+// just makes the window vanish with no trace.
+func setupCrashLog(base string) {
+	path := filepath.Join(base, "crash.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		logx.Warn("[init] Cannot open crash.log: %v", err)
+		return
+	}
+	fmt.Fprintf(f, "\n=== %s started %s (pid %d) ===\n", app.Version, time.Now().Format(time.RFC3339), os.Getpid())
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		logx.Warn("[init] SetCrashOutput: %v", err)
+	}
+	_ = f.Close() // SetCrashOutput keeps its own duplicate
 }

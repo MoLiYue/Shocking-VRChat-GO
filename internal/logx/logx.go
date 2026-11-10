@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -248,3 +249,13 @@ func Info(format string, args ...any)    { logf(INFO, format, args...) }
 func Success(format string, args ...any) { logf(SUCCESS, format, args...) }
 func Warn(format string, args ...any)    { logf(WARNING, format, args...) }
 func Error(format string, args ...any)   { logf(ERROR, format, args...) }
+
+// Recover logs a panic with its stack instead of letting it kill the
+// process. Use as the first deferred call of a goroutine:
+//
+//	defer logx.Recover("what")
+func Recover(where string) {
+	if r := recover(); r != nil {
+		Error("[panic] %s: %v\n%s", where, r, debug.Stack())
+	}
+}

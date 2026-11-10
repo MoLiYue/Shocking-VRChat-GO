@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"shockingvrc/internal/logx"
 	"shockingvrc/internal/sps"
 	"shockingvrc/internal/wave"
 )
@@ -94,6 +95,7 @@ func (h *LiveHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	done := make(chan struct{})
 	go func() {
+		defer logx.Recover("live writer")
 		for {
 			select {
 			case <-done:

@@ -171,6 +171,7 @@ func (e *Engine) start() {
 		e.wg.Add(1)
 		go func(f func(context.Context)) {
 			defer e.wg.Done()
+			defer logx.Recover("engine loop")
 			f(ctx)
 		}(f)
 	}
@@ -296,6 +297,7 @@ func (e *Engine) RestartWS() {
 // RestartLater schedules a restart after delay (like asyncio.create_task + sleep).
 func (e *Engine) RestartLater(delay time.Duration, keepWS bool) {
 	go func() {
+		defer logx.Recover("restart")
 		time.Sleep(delay)
 		e.Restart(keepWS)
 	}()

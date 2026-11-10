@@ -189,6 +189,7 @@ func (d *V3) serve() {
 	}
 	// connection_init: after 2s push strength 1 on both channels
 	go func() {
+		defer logx.Recover("v3 connection_init")
 		select {
 		case <-d.done:
 			return
@@ -199,6 +200,7 @@ func (d *V3) serve() {
 	}()
 	// heartbeat every 60s
 	go func() {
+		defer logx.Recover("v3 heartbeat")
 		t := time.NewTicker(60 * time.Second)
 		defer t.Stop()
 		for {

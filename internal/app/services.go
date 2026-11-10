@@ -231,6 +231,7 @@ func (a *App) apiPlaybackStart(r *http.Request) (any, error) {
 }
 
 func (a *App) playbackWorker(path string, speed float64, loop bool) {
+	defer logx.Recover("playback")
 	p := a.play
 	defer func() {
 		p.mu.Lock()
@@ -360,6 +361,7 @@ func formatTemplate(tpl string, vars map[string]any) string {
 }
 
 func (c *chatboxSender) loop(done chan struct{}) {
+	defer logx.Recover("chatbox")
 	a := c.a
 	logx.Info("[chatbox] Sender started")
 	defer logx.Info("[chatbox] Sender stopped")

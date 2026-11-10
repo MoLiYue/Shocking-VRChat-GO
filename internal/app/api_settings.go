@@ -91,6 +91,7 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 	sort.Strings(list)
 	if len(restart) > 0 {
 		go func() {
+			defer logx.Recover("settings restart")
 			time.Sleep(500 * time.Millisecond)
 			if restart["osc"] || restart["ws"] {
 				if restart["ws"] {
