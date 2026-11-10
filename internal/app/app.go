@@ -22,7 +22,7 @@ import (
 )
 
 // Version is the application version (overridable with -ldflags -X).
-var Version = "0.7.11"
+var Version = "0.7.12"
 
 // GitHubRepo is the release source for the auto-updater.
 var GitHubRepo = "MoLiYue/Shocking-VRChat-GO"
