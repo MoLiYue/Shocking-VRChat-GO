@@ -21,8 +21,10 @@ const (
 	ActionAppendPulseData  = 0
 	ActionAddIntensity     = 3
 	ActionSetTempIntensity = 4
-	ActionSetMute          = 5
-	ActionSetIntensity     = 7
+	// ActionSetMute was removed from the official SDK as non-working
+	// (dglab-kit 05ebc5f); only sent when ws.v4_try_unmute is on.
+	ActionSetMute      = 5
+	ActionSetIntensity = 7
 )
 
 // V4 is a DG-LAB 4 APP connected through our self-hosted V4 relay.
@@ -39,6 +41,10 @@ type V4 struct {
 	devMu       sync.Mutex
 	devices     []map[string]any
 	defaultSlot string
+	tryUnmute   func() bool
+	unmuteMu    sync.Mutex
+	unmuteReqs  map[string]string // reqId -> channel
+	unmuteTried map[string]bool   // per channel, once per snapshot
 }
 
 func (d *V4) ID() string        { return d.clientID }
@@ -166,6 +172,54 @@ func (d *V4) Close() {
 
 func num(v any, def int) int { return config.Int(v, def) }
 
+// updateMuted applies slotState.channelX.isMuted (snapshot: full state,
+// patch: only present keys) and handles transitions.
+func (d *V4) updateMuted(st map[string]any, full bool) {
+	var newly []string
+	d.mu.Lock()
+	for _, ch := range chans {
+		v, ok := config.Get(st, "channel"+ch, "isMuted").(bool)
+		if !ok {
+			if !full {
+				continue
+			}
+			v = false
+		}
+		if v && (full || !d.appMuted[ch]) { // a snapshot is a fresh state
+			newly = append(newly, ch)
+		}
+		if !v && d.appMuted[ch] {
+			logx.Info("[v4] Device %s: channel %s output unblocked in the APP", d.clientID, ch)
+		}
+		d.appMuted[ch] = v
+	}
+	d.mu.Unlock()
+	for _, ch := range newly {
+		logx.Warn("[v4] Device %s: the DG-LAB APP blocks channel %s output (isMuted); turn it on in the APP", d.clientID, ch)
+		d.maybeUnmute(ch)
+	}
+}
+
+// maybeUnmute tries the removed SetMute op once per channel and connection
+// state, when the experimental option is on. The APP's answer is logged.
+func (d *V4) maybeUnmute(ch string) {
+	if d.tryUnmute == nil || !d.tryUnmute() {
+		return
+	}
+	d.unmuteMu.Lock()
+	if d.unmuteTried[ch] {
+		d.unmuteMu.Unlock()
+		return
+	}
+	d.unmuteTried[ch] = true
+	d.unmuteMu.Unlock()
+	logx.Info("[v4] Device %s: trying to unblock channel %s (experimental SetMute)", d.clientID, ch)
+	id := d.rpc("device.op", map[string]any{"s": d.slot(), "t": ActionSetMute, "c": v4Chan(ch), "p": 1, "v": false})
+	d.unmuteMu.Lock()
+	d.unmuteReqs[id] = ch
+	d.unmuteMu.Unlock()
+}
+
 // logSlotState records the APP's slot state (output switches etc.) so
 // APP-side behaviour can be diagnosed from the log.
 func (d *V4) logSlotState(what string, v any) {
@@ -199,6 +253,10 @@ func (d *V4) handleEvent(data map[string]any) {
 		props := config.AsMap(devs[0]["props"])
 		st := config.AsMap(devs[0]["slotState"])
 		d.logSlotState("snapshot", devs[0])
+		d.unmuteMu.Lock()
+		d.unmuteTried = map[string]bool{}
+		d.unmuteMu.Unlock()
+		d.updateMuted(st, true)
 		d.mu.Lock()
 		prev := cp(d.strength)
 		// A snapshot is a fresh device state: its 0 is "not set yet".
@@ -250,6 +308,7 @@ func (d *V4) handleEvent(data map[string]any) {
 			if st, ok := sd["slotState"]; ok {
 				d.mu.Unlock()
 				d.logSlotState("slot state", st)
+				d.updateMuted(config.AsMap(st), false)
 				d.mu.Lock()
 			}
 			props := config.AsMap(sd["props"])
@@ -281,6 +340,19 @@ func (d *V4) handleMessage(data map[string]any) {
 	case "ev":
 		d.handleEvent(data)
 	case "resp":
+		id := config.Str(data["reqId"], "")
+		d.unmuteMu.Lock()
+		ch, isUnmute := d.unmuteReqs[id]
+		delete(d.unmuteReqs, id)
+		d.unmuteMu.Unlock()
+		if isUnmute {
+			if e, ok := data["error"]; ok {
+				logx.Warn("[v4] Device %s: APP rejected unblocking channel %s: %v (not supported by this APP version)", d.clientID, ch, e)
+			} else {
+				logx.Info("[v4] Device %s: APP answered unblocking channel %s: %v", d.clientID, ch, data["result"])
+			}
+			return
+		}
 		if e, ok := data["error"]; ok {
 			logx.Warn("[v4] Device %s RPC error: reqId=%v error=%v", d.clientID, data["reqId"], e)
 		} else {
@@ -301,6 +373,7 @@ type V4Relay struct {
 	hub          *Hub
 	ControllerID string
 	Enabled      func() bool
+	TryUnmute    func() bool // experimental SetMute on connect
 	mu           sync.Mutex
 	clients      map[string]*V4
 }
@@ -353,11 +426,14 @@ func (r *V4Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	writeJSON(c, map[string]any{"type": "controller_attached", "clientId": r.ControllerID})
 
 	d := &V4{
-		chanState: newChanState(r.hub.Limits(), 200),
-		hub:       r.hub,
-		conn:      c,
-		clientID:  clientID,
-		closed:    make(chan struct{}),
+		chanState:   newChanState(r.hub.Limits(), 200),
+		hub:         r.hub,
+		conn:        c,
+		clientID:    clientID,
+		closed:      make(chan struct{}),
+		tryUnmute:   r.TryUnmute,
+		unmuteReqs:  map[string]string{},
+		unmuteTried: map[string]bool{},
 	}
 	r.hub.add(d)
 	r.mu.Lock()

@@ -1348,3 +1348,77 @@ func TestOutputSwitchV3(t *testing.T) {
 		t.Fatalf("missing on accepted %v", r)
 	}
 }
+
+// The 4.0 APP's channel block (isMuted) is shown in the status; with the
+// experimental option the removed SetMute op is tried once and the APP's
+// answer handled.
+func TestV4AppMuted(t *testing.T) {
+	for _, try := range []bool{false, true} {
+		e := newEnv(t)
+		e.a.Cfg.Write(func(adv, _ config.M) { config.Sub(adv, true, "ws")["v4_try_unmute"] = try })
+		c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(e.web.URL, "http")+"/ws/dglab-v4?tid="+e.a.V4.ControllerID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ops := make(chan map[string]any, 32)
+		go func() {
+			for {
+				_, b, err := c.ReadMessage()
+				if err != nil {
+					close(ops)
+					return
+				}
+				var m map[string]any
+				_ = json.Unmarshal(b, &m)
+				if d := config.AsMap(m["data"]); d != nil {
+					ops <- d
+				}
+			}
+		}()
+		send := func(v any) {
+			b, _ := json.Marshal(map[string]any{"type": "message", "data": v})
+			_ = c.WriteMessage(websocket.TextMessage, b)
+		}
+		send(map[string]any{"t": "ev", "ev": "devices.snapshot", "devices": []any{map[string]any{
+			"slotId": "slot-x", "props": map[string]any{"intensityA": 0, "intensityB": 0},
+			"slotState": map[string]any{"channelA": map[string]any{"intensityMax": 80, "isMuted": true}, "channelB": map[string]any{"intensityMax": 80, "isMuted": false}}}}})
+		var unmute map[string]any
+		deadline := time.After(2 * time.Second)
+	collect:
+		for {
+			select {
+			case d := <-ops:
+				if config.Get(d, "data", "t") != nil && config.Int(config.Get(d, "data", "t"), -1) == 5 {
+					unmute = d
+				}
+			case <-deadline:
+				break collect
+			}
+		}
+		if try != (unmute != nil) {
+			t.Fatalf("try=%v unmute op %v", try, unmute)
+		}
+		if unmute != nil {
+			op := config.AsMap(unmute["data"])
+			if op["v"] != false || config.Int(op["c"], -1) != 0 || op["s"] != "slot-x" {
+				t.Fatalf("unmute op %v", op)
+			}
+			send(map[string]any{"t": "resp", "reqId": unmute["reqId"], "error": "invalid_operate"})
+		}
+		st := e.a.Hub.Devices()[0].Status()
+		if !st.AppMuted["A"] || st.AppMuted["B"] {
+			t.Fatalf("app_muted %v", st.AppMuted)
+		}
+		// The user unblocks A in the APP (incremental patch).
+		send(map[string]any{"t": "ev", "ev": "slots.patch", "slots": []any{map[string]any{"slotId": "slot-x",
+			"slotState": map[string]any{"channelA": map[string]any{"isMuted": false}}}}})
+		dl := time.Now().Add(2 * time.Second)
+		for e.a.Hub.Devices()[0].Status().AppMuted["A"] {
+			if time.Now().After(dl) {
+				t.Fatal("patch did not clear isMuted")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		c.Close()
+	}
+}

@@ -62,6 +62,8 @@ GitHub 未登录的代码搜索 API 不可用，仓库搜索可用：`curl -s "h
 - `SetMute`（t=5，`v: bool`）曾在 SDK 中，官方提交 `05ebc5f`（2026-06-26，"去除失效的屏蔽通道协议"）删除。**现在不能远程开关屏蔽**，发送 t=5 预期返回 `invalid_operate`。
 - `isMuted` 只能读取。`v4.go` 里的 `ActionSetMute = 5` 是 Python 版遗留常量，不要当作可用接口。
 - 用户反馈"连上后 APP 输出是关的"：先看日志 `[v4] Device ... snapshot:` 中的 `isMuted`。
+- 0.7.23 起：`V4.updateMuted` 读取 `isMuted`（snapshot 为完整状态，patch 只看出现的字段），存入 `Status.AppMuted`（`app_muted`），仪表盘提示，日志记 WARN。
+- 实验开关 `ws.v4_try_unmute`（默认 false，设置页 V4 下方）：通道被屏蔽时每个 snapshot 发送一次 `device.op {t:5, v:false}`，APP 的响应或错误以 INFO/WARN 记入日志（`unmuteReqs`）。测试：`TestV4AppMuted`。
 
 ## 本项目的强度模型（0.7.22 起）
 

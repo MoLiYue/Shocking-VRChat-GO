@@ -430,7 +430,7 @@ func (a *App) statusPusher(ctx context.Context) {
 			s := d.Status()
 			devs = append(devs, map[string]any{
 				"strength": s.Strength, "strength_max": s.StrengthMax, "strength_limit": s.StrengthLimit,
-				"limit_boost": s.LimitBoost,
+				"limit_boost": s.LimitBoost, "app_muted": s.AppMuted,
 			})
 		}
 		msg := map[string]any{"devices": devs, "engine_running": true, "output": a.outputView()}

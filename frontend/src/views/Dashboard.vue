@@ -17,6 +17,8 @@ const connected = ref(false)
 type Out = { on: boolean; by: string }
 const output = ref<Record<'A' | 'B', Out>>({ A: { on: true, by: '' }, B: { on: true, by: '' } })
 const anyOn = computed(() => output.value.A.on || output.value.B.on)
+// DG-LAB 4.0 APP blocks a channel's output itself (only the APP can lift it).
+const appMuted = ref<Record<'A' | 'B', boolean>>({ A: false, B: false })
 async function setOutput(channel: 'A' | 'B' | 'all', on: boolean) {
   try { output.value = await apiPost('/api/v1/output', { channel, on }) } catch {}
 }
@@ -133,6 +135,7 @@ function connectLiveWs() {
         connected.value = devices.length > 0
         if (devices.length > 0) {
           strength.value = devices[0].strength || { A: 0, B: 0 }
+          appMuted.value = { A: !!devices[0].app_muted?.A, B: !!devices[0].app_muted?.B }
           applyLimits(devices[0])
           limit.value = {
             A: Math.min(devices[0].strength_max?.A || 0, devices[0].strength_limit?.A || 100),
@@ -181,6 +184,7 @@ async function pollStatus() {
     if (devices.length > 0) {
       const attr = devices[0].attr
       strength.value = attr.strength
+      appMuted.value = { A: !!attr.app_muted?.A, B: !!attr.app_muted?.B }
       applyLimits(attr)
       limit.value = {
         A: Math.min(attr.strength_max?.A || 0, attr.strength_limit?.A || 100),
@@ -458,6 +462,7 @@ onUnmounted(stopLive)
                 <component :is="output[ch].on ? Power : PowerOff" :size="14" />
               </button>
             </div>
+            <p v-if="appMuted[ch]" class="off-note">{{ t('dashboard.appMuted', { ch }) }}</p>
             <p v-if="!output[ch].on" class="off-note">
               {{ output[ch].by === 'app' ? t('dashboard.outputOffApp') : t('dashboard.outputOffUser') }}
               <button class="link" @click="setOutput(ch, true)">{{ t('dashboard.outputOn') }}</button>

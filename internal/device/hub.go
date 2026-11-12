@@ -19,7 +19,10 @@ type Status struct {
 	LimitBoost      map[string]int  `json:"limit_boost"`
 	OverlimitActive map[string]bool `json:"overlimit_active"`
 	OutputOff       map[string]bool `json:"output_off"`
-	UUID            string          `json:"uuid"`
+	// AppMuted: the DG-LAB 4.0 APP has this channel's output blocked
+	// (slotState.isMuted). Only the APP can lift it.
+	AppMuted map[string]bool `json:"app_muted"`
+	UUID     string          `json:"uuid"`
 }
 
 // Device is a connected Coyote (via the DG-LAB APP).
@@ -61,6 +64,7 @@ type chanState struct {
 	// pushedAt is when we last changed the strength; APP reports right
 	// after that are echoes of our own command.
 	pushedAt map[string]time.Time
+	appMuted map[string]bool
 }
 
 var chans = [2]string{"A", "B"}
@@ -87,6 +91,7 @@ func newChanState(l Limits, initialMax int) *chanState {
 		off:             map[string]bool{"A": false, "B": false},
 		synced:          map[string]bool{"A": false, "B": false},
 		pushedAt:        map[string]time.Time{},
+		appMuted:        map[string]bool{"A": false, "B": false},
 	}
 }
 
@@ -123,7 +128,7 @@ func (s *chanState) snapshot(id string) Status {
 	defer s.mu.Unlock()
 	return Status{
 		Strength: cp(s.strength), StrengthMax: cp(s.strengthMax), StrengthLimit: cp(s.strengthLimit),
-		LimitBoost: cp(s.limitBoost), OverlimitActive: cp(s.overlimitActive), OutputOff: cp(s.off), UUID: id,
+		LimitBoost: cp(s.limitBoost), OverlimitActive: cp(s.overlimitActive), OutputOff: cp(s.off), AppMuted: cp(s.appMuted), UUID: id,
 	}
 }
 

@@ -40,6 +40,7 @@ async function toggleSteamVR(e: Event) {
 }
 const wsPort = ref(28846)
 const v4Enabled = ref(true)
+const v4TryUnmute = ref(false)
 const webPort = ref(8800)
 const webHost = ref('127.0.0.1')
 const githubMirror = ref('')
@@ -56,7 +57,7 @@ const importErr = ref(false)
 // program restarts), so they keep an explicit save button. Everything else
 // is saved automatically.
 const unsaved = useUnsaved(() => ({ oscPort: oscPort.value, oscHost: oscHost.value, wsPort: wsPort.value, webPort: webPort.value, webHost: webHost.value }))
-const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, oscSendHost: oscSendHost.value, oscSendPort: oscSendPort.value, oscForward: oscForward.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value, monitorEnabled: monitorEnabled.value }), { save: saveAuto, delay: 800 })
+const autoUnsaved = useUnsaved(() => ({ v4Enabled: v4Enabled.value, v4TryUnmute: v4TryUnmute.value, oscSendHost: oscSendHost.value, oscSendPort: oscSendPort.value, oscForward: oscForward.value, githubMirror: githubMirror.value, logLevel: logLevel.value, minimizeToTray: minimizeToTray.value, monitorEnabled: monitorEnabled.value }), { save: saveAuto, delay: 800 })
 
 async function load() {
   unsaved.markLoading()
@@ -70,6 +71,7 @@ async function load() {
   oscForward.value = (adv.osc?.forward || []).map((f: any) => ({ host: f.host || '127.0.0.1', port: f.port, enabled: f.enabled !== false }))
   wsPort.value = adv.ws?.listen_port || 28846
   v4Enabled.value = adv.ws?.v4_enabled !== false
+  v4TryUnmute.value = !!adv.ws?.v4_try_unmute
   webPort.value = adv.web_server?.listen_port || 8800
   // Must match the backend default (0.0.0.0): a wrong fallback here would
   // silently move the server to localhost-only on the next save.
@@ -85,7 +87,7 @@ async function load() {
 
 async function saveAuto() {
   const data = await apiPost('/api/v1/settings', {
-    ws: { v4_enabled: v4Enabled.value },
+    ws: { v4_enabled: v4Enabled.value, v4_try_unmute: v4TryUnmute.value },
     osc: { send_host: oscSendHost.value, send_port: oscSendPort.value, forward: oscForward.value },
     log_level: logLevel.value,
     github_mirror: githubMirror.value,
@@ -445,6 +447,13 @@ onUnmounted(() => { stopProgressPolling() })
             <span>{{ v4Enabled ? t('common.enabled') : t('common.disabled') }}</span>
           </label>
           <p class="hint">{{ t('settings.v4Hint') }}</p>
+        </div>
+        <div v-if="v4Enabled" class="field">
+          <label class="toggle-row">
+            <input type="checkbox" class="switch" role="switch" v-model="v4TryUnmute">
+            <span>{{ t('settings.v4TryUnmute') }}</span>
+          </label>
+          <p class="hint">{{ t('settings.v4TryUnmuteHint') }}</p>
         </div>
       </section>
 

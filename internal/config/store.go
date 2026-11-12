@@ -111,6 +111,9 @@ func DefaultAdvanced() M {
 			"listen_host": "0.0.0.0",
 			"listen_port": 28846,
 			"v4_enabled":  true,
+			// Experimental: ask the 4.0 APP to lift its channel block on
+			// connect (SetMute t=5, removed from the official SDK).
+			"v4_try_unmute": false,
 		},
 		"osc": M{
 			"listen_host": "127.0.0.1",

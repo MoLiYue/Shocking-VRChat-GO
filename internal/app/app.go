@@ -121,6 +121,7 @@ func New(baseDir string) *App {
 	}
 	a.waveTest = waveTestState{Channel: "A", Strength: 50, WaveScale: 1.0}
 	a.V4 = device.NewV4Relay(a.Hub, func() bool { return config.Bool(a.Cfg.Get("ws", "v4_enabled"), true) })
+	a.V4.TryUnmute = func() bool { return config.Bool(a.Cfg.Get("ws", "v4_try_unmute"), false) }
 	a.Engine = &Engine{a: a}
 	a.chatbox = &chatboxSender{a: a}
 	a.monitor = newParamMonitor(a)

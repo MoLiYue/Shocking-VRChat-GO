@@ -87,6 +87,9 @@ func (a *App) apiSettings(r *http.Request) (any, error) {
 			if v, ok := o["v4_enabled"]; ok {
 				set("ws", "v4_enabled", config.Bool(v, true), "")
 			}
+			if v, ok := o["v4_try_unmute"]; ok {
+				set("ws", "v4_try_unmute", config.Bool(v, false), "")
+			}
 		}
 		if o := config.AsMap(data["web_server"]); o != nil {
 			if v, ok := o["listen_port"]; ok {
