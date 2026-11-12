@@ -433,7 +433,7 @@ func (a *App) statusPusher(ctx context.Context) {
 				"limit_boost": s.LimitBoost,
 			})
 		}
-		msg := map[string]any{"devices": devs, "engine_running": true}
+		msg := map[string]any{"devices": devs, "engine_running": true, "output": a.outputView()}
 		b, _ := json.Marshal(msg)
 		if string(b) == last {
 			continue

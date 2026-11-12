@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"mime/multipart"
@@ -293,7 +294,14 @@ func TestV4RelayHandshake(t *testing.T) {
 	}}}
 	b, _ := json.Marshal(snap)
 	_ = c.WriteMessage(websocket.TextMessage, b)
-	time.Sleep(100 * time.Millisecond)
+	// The APP starts at 0: the configured strength (limit 50) is applied
+	// right away, without having to press + in the APP.
+	for _, wantC := range []int{0, 1} {
+		op := config.AsMap(config.Get(read(), "data", "data"))
+		if config.Int(op["t"], -1) != 3 || config.Int(op["c"], -1) != wantC || config.Int(op["v"], 0) != 50 {
+			t.Fatalf("initial strength op %v", op)
+		}
+	}
 	e.getJSON(t, "/api/v1/sendwave/A/2/0A0A0A0A64646464")
 	m = read()
 	data := config.AsMap(m["data"])
@@ -1285,5 +1293,56 @@ func TestSharedOSCSendTarget(t *testing.T) {
 	}
 	if msgs, _ := osc.Parse(buf[:n]); len(msgs) != 1 || msgs[0].Address != "/chatbox/input" {
 		t.Fatalf("got %v", msgs)
+	}
+}
+
+// Strength sync: the APP's initial 0 is not "off"; lowering to 0 in the
+// APP later is an emergency stop that switches the output off; the
+// program's own switch holds 0 and restores the strength.
+func TestOutputSwitchV3(t *testing.T) {
+	e := newEnv(t) // limits are 50
+	app := dialMockApp(t, e)
+	master := config.Str(e.a.Cfg.Get("ws", "master_uuid"), "")
+	devID := app.waitFor(func(v map[string]string) bool { return v["type"] == "bind" }, 2*time.Second)["clientId"]
+	app.send(map[string]string{"type": "bind", "clientId": master, "targetId": devID, "message": "DGLAB"})
+	report := func(a, b int) {
+		app.send(map[string]string{"type": "msg", "clientId": master, "targetId": devID,
+			"message": fmt.Sprintf("strength-%d+%d+200+200", a, b)})
+	}
+	wantSet := func(ch string, v int) {
+		t.Helper()
+		pre := "strength-" + map[string]string{"A": "1", "B": "2"}[ch] + "+2+"
+		got := app.waitFor(func(m map[string]string) bool { return strings.HasPrefix(m["message"], pre) }, 3*time.Second)
+		if got["message"] != fmt.Sprintf("%s%d", pre, v) {
+			t.Fatalf("want %s%d, got %v", pre, v, got)
+		}
+	}
+	report(0, 0) // fresh APP
+	wantSet("A", 50)
+	wantSet("B", 50)
+	report(50, 50)
+	time.Sleep(1600 * time.Millisecond) // past the echo window
+	report(0, 50)                       // user pulls A to 0 in the APP
+	deadline := time.Now().Add(2 * time.Second)
+	for config.Get(e.getJSON(t, "/api/v1/output"), "A", "on") != false {
+		if time.Now().After(deadline) {
+			t.Fatal("APP 0 did not switch A off")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if o := e.getJSON(t, "/api/v1/output"); config.Get(o, "A", "by") != "app" || config.Get(o, "B", "on") != true {
+		t.Fatalf("output %v", o)
+	}
+	// Overlimit/add cannot raise an off channel.
+	e.getJSON(t, "/api/v1/strength/A/add/10")
+	report(5, 50) // + in the APP while off is set back to 0
+	wantSet("A", 0)
+	// The program's switch restores the strength.
+	e.postJSON(t, "/api/v1/output", map[string]any{"channel": "A", "on": true})
+	wantSet("A", 50)
+	e.postJSON(t, "/api/v1/output", map[string]any{"channel": "all", "on": false})
+	wantSet("A", 0)
+	if r := e.postJSON(t, "/api/v1/output", map[string]any{"channel": "A"}); r["_status"] != 400 {
+		t.Fatalf("missing on accepted %v", r)
 	}
 }

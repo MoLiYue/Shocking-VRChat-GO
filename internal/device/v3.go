@@ -82,6 +82,7 @@ func (d *V3) SetStrength(ch, mode string, value int, force bool) error {
 			value = limit
 		}
 	}
+	d.pushedAt[ch] = time.Now()
 	switch mode {
 	case "2":
 		d.strength[ch] = value
@@ -148,24 +149,10 @@ func (d *V3) handle(m V3Message) error {
 				vals[i] = v
 			}
 			d.mu.Lock()
+			prev := cp(d.strength)
 			d.strength["A"], d.strength["B"], d.strengthMax["A"], d.strengthMax["B"] = vals[0], vals[1], vals[2], vals[3]
-			type fix struct {
-				ch    string
-				limit int
-			}
-			var fixes []fix
-			for _, ch := range []string{"A", "B"} {
-				limit := d.upperLocked(ch)
-				if d.strength[ch] != 0 && d.strength[ch] != limit {
-					fixes = append(fixes, fix{ch, limit})
-				}
-			}
 			d.mu.Unlock()
-			for _, f := range fixes {
-				if err := d.SetStrength(f.ch, "2", f.limit, false); err != nil {
-					return err
-				}
-			}
+			d.hub.reconcile(d, prev)
 		case strings.HasPrefix(m.Message, "feedback-"):
 			logx.Info("[ws] Device %s feedback: %s", d.uuid, m.Message)
 		default:
@@ -187,7 +174,8 @@ func (d *V3) serve() {
 	if err := d.send(V3Message{Type: "bind", ClientID: d.uuid, Message: "targetId"}); err != nil {
 		return
 	}
-	// connection_init: after 2s push strength 1 on both channels
+	// connection_init: the APP reports its strength (and max) only after
+	// a strength command, so after 2s set the wanted strength directly.
 	go func() {
 		defer logx.Recover("v3 connection_init")
 		select {
@@ -195,8 +183,14 @@ func (d *V3) serve() {
 			return
 		case <-time.After(2 * time.Second):
 		}
-		_ = d.SetStrength("A", "2", 1, true)
-		_ = d.SetStrength("B", "2", 1, true)
+		for _, ch := range chans {
+			d.mu.Lock()
+			synced, want := d.synced[ch], d.wantLocked(ch)
+			d.mu.Unlock()
+			if !synced {
+				_ = d.SetStrength(ch, "2", want, true)
+			}
+		}
 	}()
 	// heartbeat every 60s
 	go func() {

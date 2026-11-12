@@ -107,6 +107,7 @@ func (d *V4) SetStrength(ch, mode string, value int, force bool) error {
 		}
 	}
 	slot, c := d.slot(), v4Chan(ch)
+	d.pushedAt[ch] = time.Now()
 	var op map[string]any
 	switch mode {
 	case "2":
@@ -165,16 +166,14 @@ func (d *V4) Close() {
 
 func num(v any, def int) int { return config.Int(v, def) }
 
-func (d *V4) followLimits() {
-	for _, ch := range []string{"A", "B"} {
-		d.mu.Lock()
-		limit := d.upperLocked(ch)
-		need := d.strength[ch] != 0 && d.strength[ch] != limit
-		d.mu.Unlock()
-		if need {
-			_ = d.SetStrength(ch, "2", limit, false)
-		}
+// logSlotState records the APP's slot state (output switches etc.) so
+// APP-side behaviour can be diagnosed from the log.
+func (d *V4) logSlotState(what string, v any) {
+	b, _ := json.Marshal(v)
+	if len(b) > 600 {
+		b = append(b[:600], "…"...)
 	}
+	logx.Info("[v4] Device %s %s: %s", d.clientID, what, b)
 }
 
 func (d *V4) handleEvent(data map[string]any) {
@@ -199,7 +198,11 @@ func (d *V4) handleEvent(data map[string]any) {
 		}
 		props := config.AsMap(devs[0]["props"])
 		st := config.AsMap(devs[0]["slotState"])
+		d.logSlotState("snapshot", devs[0])
 		d.mu.Lock()
+		prev := cp(d.strength)
+		// A snapshot is a fresh device state: its 0 is "not set yet".
+		d.synced["A"], d.synced["B"] = false, false
 		d.strength["A"] = num(props["intensityA"], 0)
 		d.strength["B"] = num(props["intensityB"], 0)
 		d.strengthMax["A"] = num(config.Get(st, "channelA", "intensityMax"), 200)
@@ -207,13 +210,15 @@ func (d *V4) handleEvent(data map[string]any) {
 		logx.Info("[v4] Device %s snapshot: %d devices, slot=%s str=%v max=%v",
 			d.clientID, len(devs), d.slot(), d.strength, d.strengthMax)
 		d.mu.Unlock()
-		d.followLimits()
+		d.hub.reconcile(d, prev)
 	case "devices.patch":
+		added := false
 		d.devMu.Lock()
 		for _, x := range config.AsList(data["added"]) {
 			if m, ok := x.(map[string]any); ok {
 				d.devices = append(d.devices, m)
 				logx.Info("[v4] Device %s added slot: %v", d.clientID, m["slotId"])
+				added = true
 			}
 		}
 		for _, x := range config.AsList(data["removed"]) {
@@ -231,10 +236,22 @@ func (d *V4) handleEvent(data map[string]any) {
 			d.defaultSlot = config.Str(d.devices[0]["slotId"], "slot-a")
 		}
 		d.devMu.Unlock()
+		if added { // a (re)connected Coyote starts from the APP's defaults
+			d.mu.Lock()
+			d.synced["A"], d.synced["B"] = false, false
+			d.mu.Unlock()
+			d.rpc("devices.get", nil)
+		}
 	case "slots.patch":
 		d.mu.Lock()
+		prev := cp(d.strength)
 		for _, x := range config.AsList(data["slots"]) {
 			sd := config.AsMap(x)
+			if st, ok := sd["slotState"]; ok {
+				d.mu.Unlock()
+				d.logSlotState("slot state", st)
+				d.mu.Lock()
+			}
 			props := config.AsMap(sd["props"])
 			if v, ok := props["intensityA"]; ok {
 				d.strength["A"] = num(v, d.strength["A"])
@@ -251,7 +268,7 @@ func (d *V4) handleEvent(data map[string]any) {
 			}
 		}
 		d.mu.Unlock()
-		d.followLimits()
+		d.hub.reconcile(d, prev)
 	case "custom.action":
 		logx.Info("[v4] Device %s custom action: %v", d.clientID, data["action"])
 	default:

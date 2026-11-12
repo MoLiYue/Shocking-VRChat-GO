@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { themeColor } from '@/canvasFont'
 import { ref, reactive, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
-import { api } from '@/api'
+import { api, apiPost } from '@/api'
 import QrCode from '@/components/QrCode.vue'
 import AppSelect from '@/components/AppSelect.vue'
-import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp, Share2 } from 'lucide-vue-next'
+import { Radio, Clock, Gauge, Copy, QrCode as QrIcon, ChevronUp, Share2, Power, PowerOff } from 'lucide-vue-next'
 import { toast } from '@/dialog'
 import { openShareExport } from '@/share'
 import { useI18n } from '@/i18n'
@@ -13,6 +13,13 @@ const { t } = useI18n()
 
 // --- State ---
 const connected = ref(false)
+// Output switch per channel (off = held at 0). by: user | app | api.
+type Out = { on: boolean; by: string }
+const output = ref<Record<'A' | 'B', Out>>({ A: { on: true, by: '' }, B: { on: true, by: '' } })
+const anyOn = computed(() => output.value.A.on || output.value.B.on)
+async function setOutput(channel: 'A' | 'B' | 'all', on: boolean) {
+  try { output.value = await apiPost('/api/v1/output', { channel, on }) } catch {}
+}
 const deviceCount = ref(0)
 const strength = ref({ A: 0, B: 0 })
 const limit = ref({ A: 100, B: 100 })
@@ -120,6 +127,7 @@ function connectLiveWs() {
         liveValues[msg.event.address] = { v: msg.event.value, at: Date.now() }
         lastTrigger.value = t('dashboard.justNow')
       } else if (msg.topic === 'status') {
+        if (msg.output) output.value = msg.output
         const devices = msg.devices || []
         deviceCount.value = devices.length
         connected.value = devices.length > 0
@@ -166,6 +174,7 @@ async function pollUsedParams() {
 async function pollStatus() {
   try {
     const data = await api('/api/v1/status')
+    if (data.output) output.value = data.output
     const devices = data.devices || []
     deviceCount.value = devices.length
     connected.value = devices.length > 0
@@ -419,11 +428,16 @@ onUnmounted(stopLive)
         <section class="card" data-tour="dashboard-status">
           <div class="card-head">
             <h2>{{ t('dashboard.channelOutput') }}</h2>
-            <span class="conn-pill" :class="{ on: connected }">
-              <span class="dot" />{{ connected ? t('dashboard.deviceCount', { count: deviceCount }) : t('dashboard.disconnected') }}
-            </span>
+            <div class="head-tools">
+              <span class="conn-pill" :class="{ on: connected }">
+                <span class="dot" />{{ connected ? t('dashboard.deviceCount', { count: deviceCount }) : t('dashboard.disconnected') }}
+              </span>
+              <button class="btn btn-sm" :class="anyOn ? 'btn-ghost' : 'btn-primary'" @click="setOutput('all', !anyOn)">
+                <component :is="anyOn ? PowerOff : Power" :size="13" />{{ anyOn ? t('dashboard.outputAllOff') : t('dashboard.outputAllOn') }}
+              </button>
+            </div>
           </div>
-          <div class="out-row" v-for="ch in (['A', 'B'] as const)" :key="ch" :class="'ch-' + ch.toLowerCase()">
+          <div class="out-row" v-for="ch in (['A', 'B'] as const)" :key="ch" :class="['ch-' + ch.toLowerCase(), { 'is-off': !output[ch].on }]">
             <div class="out-head">
               <span class="ch-tag">{{ ch }}</span>
               <div class="bar-track" role="img"
@@ -438,7 +452,16 @@ onUnmounted(stopLive)
                 <span v-if="overPart(ch) > 0" class="over-val" :title="t('dashboard.overPart')">(+{{ overPart(ch) }})</span>
                 / 200
               </span>
+              <button class="out-sw" role="switch" :aria-checked="output[ch].on"
+                :aria-label="t('dashboard.outputToggle', { ch })" :title="output[ch].on ? t('dashboard.outputOff') : t('dashboard.outputOn')"
+                @click="setOutput(ch, !output[ch].on)">
+                <component :is="output[ch].on ? Power : PowerOff" :size="14" />
+              </button>
             </div>
+            <p v-if="!output[ch].on" class="off-note">
+              {{ output[ch].by === 'app' ? t('dashboard.outputOffApp') : t('dashboard.outputOffUser') }}
+              <button class="link" @click="setOutput(ch, true)">{{ t('dashboard.outputOn') }}</button>
+            </p>
             <canvas :ref="(el) => setCanvas(ch, el)" class="wave-canvas"></canvas>
           </div>
           <div class="legend">
@@ -603,6 +626,12 @@ onUnmounted(stopLive)
 .used-tag.overlimit { background: var(--warning-surface, rgba(255, 170, 0, 0.12)); color: var(--warning); }
 .used-tag.off { opacity: 0.5; text-decoration: line-through; }
 .used-ago { flex-shrink: 0; font-size: var(--text-2xs); color: var(--text-muted); margin-left: auto; }
+.out-sw { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--success); cursor: pointer; }
+.out-sw:hover { border-color: var(--border-hover); background: var(--bg-hover); }
+.is-off .out-sw { color: var(--danger); border-color: var(--danger); }
+.is-off .bar-track, .is-off .wave-canvas { opacity: .45; }
+.off-note { font-size: var(--text-xs); color: var(--danger); margin: 0 0 var(--sp-2); }
+.off-note .link { background: none; border: none; padding: 0; margin-left: var(--sp-2); color: var(--accent); cursor: pointer; font-size: inherit; text-decoration: underline; }
 .out-val { font-size: var(--text-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 72px; text-align: right; }
 .out-val strong { color: var(--text); }
 .wave-canvas { width: 100%; height: 72px; border-radius: var(--radius-md); display: block; }

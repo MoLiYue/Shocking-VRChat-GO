@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"shockingvrc/internal/logx"
 )
@@ -17,6 +18,7 @@ type Status struct {
 	StrengthLimit   map[string]int  `json:"strength_limit"`
 	LimitBoost      map[string]int  `json:"limit_boost"`
 	OverlimitActive map[string]bool `json:"overlimit_active"`
+	OutputOff       map[string]bool `json:"output_off"`
 	UUID            string          `json:"uuid"`
 }
 
@@ -51,7 +53,28 @@ type chanState struct {
 	// boosted is the strength actually added by an active boost-mode
 	// handler (after capping), so reverting subtracts exactly that.
 	boosted map[string]int
+	// off mirrors the hub's output switch: the channel is held at 0.
+	off map[string]bool
+	// synced is false until the APP's strength was first reconciled; the
+	// APP's initial 0 is "not set yet", never a user action.
+	synced map[string]bool
+	// pushedAt is when we last changed the strength; APP reports right
+	// after that are echoes of our own command.
+	pushedAt map[string]time.Time
 }
+
+var chans = [2]string{"A", "B"}
+
+func chIdx(ch string) int {
+	if ch == "B" {
+		return 1
+	}
+	return 0
+}
+
+// appEchoWindow: an APP report this soon after our own change is treated
+// as its echo, not as the user changing the strength in the APP.
+const appEchoWindow = 1500 * time.Millisecond
 
 func newChanState(l Limits, initialMax int) *chanState {
 	return &chanState{
@@ -61,16 +84,24 @@ func newChanState(l Limits, initialMax int) *chanState {
 		overlimitActive: map[string]bool{"A": false, "B": false},
 		limitBoost:      map[string]int{"A": 0, "B": 0},
 		boosted:         map[string]int{"A": 0, "B": 0},
+		off:             map[string]bool{"A": false, "B": false},
+		synced:          map[string]bool{"A": false, "B": false},
+		pushedAt:        map[string]time.Time{},
 	}
 }
 
-// upperLocked returns min(strength_max, limit + overlimit boost, 200).
-func (s *chanState) upperLocked(ch string) int {
-	limit := min(200, s.strengthLimit[ch]+max(0, s.limitBoost[ch]))
-	if s.strengthMax[ch] < limit {
-		return s.strengthMax[ch]
+// wantLocked is the strength we want on ch, ignoring the APP's own max:
+// 0 when output is off, else min(limit + overlimit boost, 200).
+func (s *chanState) wantLocked(ch string) int {
+	if s.off[ch] {
+		return 0
 	}
-	return limit
+	return min(200, s.strengthLimit[ch]+max(0, s.limitBoost[ch]))
+}
+
+// upperLocked returns the effective target/cap: min(strength_max, want).
+func (s *chanState) upperLocked(ch string) int {
+	return min(s.strengthMax[ch], s.wantLocked(ch))
 }
 
 func (s *chanState) Upper(ch string) int {
@@ -92,7 +123,7 @@ func (s *chanState) snapshot(id string) Status {
 	defer s.mu.Unlock()
 	return Status{
 		Strength: cp(s.strength), StrengthMax: cp(s.strengthMax), StrengthLimit: cp(s.strengthLimit),
-		LimitBoost: cp(s.limitBoost), OverlimitActive: cp(s.overlimitActive), UUID: id,
+		LimitBoost: cp(s.limitBoost), OverlimitActive: cp(s.overlimitActive), OutputOff: cp(s.off), UUID: id,
 	}
 }
 
@@ -106,6 +137,84 @@ type Hub struct {
 	ClearObserver func(ch string)
 	limits        atomic.Pointer[Limits]
 	limitBoost    atomic.Pointer[[2]int]
+
+	outMu sync.Mutex
+	off   [2]bool   // output switch per channel (true = held at 0)
+	offBy [2]string // who switched it off: user | app | api
+}
+
+// Output reports the output switch: off and who turned it off, per channel.
+func (h *Hub) Output() (off [2]bool, by [2]string) {
+	h.outMu.Lock()
+	defer h.outMu.Unlock()
+	return h.off, h.offBy
+}
+
+// SetOutput switches a channel's output on or off on every device. Off
+// holds the strength at 0 (no add/boost/overlimit can raise it); on
+// restores the configured strength. by: user | app | api.
+func (h *Hub) SetOutput(ch string, on bool, by string) {
+	i := chIdx(ch)
+	h.outMu.Lock()
+	changed := h.off[i] == on
+	h.off[i] = !on
+	h.offBy[i] = ""
+	if !on {
+		h.offBy[i] = by
+	}
+	h.outMu.Unlock()
+	if changed {
+		if on {
+			logx.Info("[ws] Output %s on (%s)", ch, by)
+		} else {
+			logx.Warn("[ws] Output %s off (%s)", ch, by)
+		}
+	}
+	devs := h.Devices()
+	for _, d := range devs {
+		s := d.state()
+		s.mu.Lock()
+		s.off[ch] = !on
+		s.mu.Unlock()
+	}
+	h.applyLimits(devs)
+}
+
+// reconcile handles a strength report from the APP (prev = what we knew
+// before it). The program's strength is authoritative: anything else is
+// set back, with one exception: the user lowering a channel to 0 in the
+// APP is an emergency stop and switches that channel's output off.
+// The APP's first report (0 while nothing is set yet) is never a stop.
+func (h *Hub) reconcile(d Device, prev map[string]int) {
+	s := d.state()
+	type fix struct {
+		ch string
+		v  int
+	}
+	var fixes []fix
+	var stops []string
+	s.mu.Lock()
+	for _, ch := range chans {
+		now, target := s.strength[ch], s.upperLocked(ch)
+		if s.synced[ch] && prev[ch] > 0 && now == 0 && target > 0 && time.Since(s.pushedAt[ch]) > appEchoWindow {
+			stops = append(stops, ch)
+			continue
+		}
+		s.synced[ch] = true
+		if now != target {
+			fixes = append(fixes, fix{ch, target})
+		}
+	}
+	s.mu.Unlock()
+	for _, ch := range stops {
+		logx.Warn("[ws] Device %s: channel %s lowered to 0 in the APP", d.ID(), ch)
+		h.SetOutput(ch, false, "app")
+	}
+	for _, f := range fixes {
+		if err := d.SetStrength(f.ch, "2", f.v, true); err != nil {
+			logx.Warn("[ws] Device %s strength sync failed: %v", d.ID(), err)
+		}
+	}
 }
 
 // NewHub creates an empty hub.
@@ -125,13 +234,15 @@ func (h *Hub) SetSuppressClear(v bool) { h.suppressClear.Store(v) }
 func (h *Hub) SuppressClear() bool { return h.suppressClear.Load() }
 
 func (h *Hub) add(d Device) {
+	s := d.state()
+	off, _ := h.Output()
+	s.mu.Lock()
+	s.off["A"], s.off["B"] = off[0], off[1]
 	if b := h.limitBoost.Load(); b != nil {
-		s := d.state()
-		s.mu.Lock()
 		s.limitBoost["A"], s.limitBoost["B"] = b[0], b[1]
 		s.overlimitActive["A"], s.overlimitActive["B"] = b[0] > 0, b[1] > 0
-		s.mu.Unlock()
 	}
+	s.mu.Unlock()
 	h.mu.Lock()
 	if _, ok := h.devices[d]; !ok {
 		h.devices[d] = struct{}{}
@@ -291,7 +402,7 @@ func (h *Hub) applyLimits(devs []Device) {
 			s := d.state()
 			s.mu.Lock()
 			limit := s.upperLocked(ch)
-			push := s.strengthMax[ch] > 0 && s.strength[ch] != 0
+			push := s.synced[ch] && s.strength[ch] != limit
 			s.mu.Unlock()
 			if push {
 				if err := d.SetStrength(ch, "2", limit, true); err != nil {

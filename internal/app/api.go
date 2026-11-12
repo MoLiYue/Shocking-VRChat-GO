@@ -183,6 +183,8 @@ func (a *App) Handler() http.Handler {
 		}, nil
 	})
 	h("GET /api/v1/strength/{channel}/{action}/{value}", a.apiStrength)
+	h("GET /api/v1/output", func(*http.Request) (any, error) { return a.outputView(), nil })
+	h("POST /api/v1/output", a.apiOutputSet)
 	h("GET /api/v1/strength_boost/{channel}/{value}/{duration}", a.apiStrengthBoost)
 	h("GET /api/v1/strength_limit", func(*http.Request) (any, error) { return a.strengthLimitView(), nil })
 	h("POST /api/v1/strength_limit", a.apiStrengthLimitSet)
@@ -411,6 +413,7 @@ func (a *App) apiStatus(*http.Request) (any, error) {
 			config.Int(a.Cfg.Get("osc", "listen_port"), 0)),
 		"last_osc_time":  a.activity.lastTime(),
 		"devices":        devs,
+		"output":         a.outputView(),
 		"version":        Version,
 		"tray_available": a.TrayAvailable,
 	}, nil
@@ -441,6 +444,17 @@ func (a *App) apiStrength(r *http.Request) (any, error) {
 		return nil, httpErr(400, "action must be set/add/sub")
 	}
 	value = config.ClampInt(value, 0, 200)
+	// "set 0" used to stop a channel for good (0 meant off); keep that
+	// meaning for external tools by switching the output off, and let any
+	// other set switch it back on.
+	if mode == "2" {
+		for _, ch := range chs {
+			a.Hub.SetOutput(ch, value > 0, "api")
+		}
+		if value == 0 {
+			return map[string]any{"result": "OK", "action": action, "value": value, "channels": chs}, nil
+		}
+	}
 	// Never force: "set" is clamped to the effective cap and "add" is
 	// limited to the remaining headroom, exactly like OSC-driven output.
 	for _, ch := range chs {
@@ -451,6 +465,35 @@ func (a *App) apiStrength(r *http.Request) (any, error) {
 		}
 	}
 	return map[string]any{"result": "OK", "action": action, "value": value, "channels": chs}, nil
+}
+
+// outputView is the output switch per channel: {A:{on,by}, B:{on,by}}.
+func (a *App) outputView() map[string]any {
+	off, by := a.Hub.Output()
+	v := map[string]any{}
+	for i, ch := range []string{"A", "B"} {
+		v[ch] = map[string]any{"on": !off[i], "by": by[i]}
+	}
+	return v
+}
+
+func (a *App) apiOutputSet(r *http.Request) (any, error) {
+	data, err := readBody(r)
+	if err != nil {
+		return nil, err
+	}
+	chs, err := channelsOf(config.Str(data["channel"], "all"))
+	if err != nil {
+		return nil, err
+	}
+	on, ok := data["on"].(bool)
+	if !ok {
+		return nil, httpErr(400, "on must be true or false")
+	}
+	for _, ch := range chs {
+		a.Hub.SetOutput(ch, on, "user")
+	}
+	return a.outputView(), nil
 }
 
 func (a *App) apiStrengthBoost(r *http.Request) (any, error) {
