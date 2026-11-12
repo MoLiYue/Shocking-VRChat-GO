@@ -472,18 +472,19 @@ func extractZip(path, dir string) error {
 
 func updateScript(pid int, exeDir, exePath, srcDir, tmpDir string) string {
 	// User data that must survive an update untouched.
-	userDirs := `"_backup" "wave_presets" "dg-lab" "profiles" "recordings"`
+	userDirs := `"_backup" "config" "logs" "wave_presets" "dg-lab" "profiles" "recordings"`
 	userFiles := fmt.Sprintf(`"%s" "%s" "curve_config.yaml" "overlimit_rules.yaml" "window_state.json" "shocking_vrchat.log*" "error.log" "crash.log" "update.log" "param_monitor.json"`,
 		config.FileAdvanced, config.FileBasic)
 	// robocopy defaults to 1,000,000 retries x 30 s on a locked file, which
 	// would hang the (hidden) updater forever.
 	const retry = "/R:10 /W:1 /NP /NFL /NDL"
-	logFile := exeDir + `\update.log`
+	logFile := exeDir + `\logs\update.log`
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\r\n", args...) }
 	w("@echo off")
 	w("setlocal enabledelayedexpansion")
 	w("chcp 65001 >nul 2>&1")
+	w(`if not exist "%s\logs" mkdir "%s\logs"`, exeDir, exeDir)
 	w(`set "LOG=%s"`, logFile)
 	w(`echo [%%date%% %%time%%] Updating, waiting for PID %d to exit > "%%LOG%%"`, pid)
 	w("set WAIT_COUNT=0")

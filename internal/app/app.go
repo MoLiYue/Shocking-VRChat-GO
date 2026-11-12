@@ -19,6 +19,7 @@ import (
 	"shockingvrc/internal/handler"
 	"shockingvrc/internal/logx"
 	"shockingvrc/internal/netguard"
+	"shockingvrc/internal/paths"
 	"shockingvrc/internal/queue"
 	"shockingvrc/internal/wave"
 )
@@ -100,7 +101,7 @@ type App struct {
 func New(baseDir string) *App {
 	a := &App{
 		BaseDir:            baseDir,
-		Cfg:                config.NewStore(baseDir),
+		Cfg:                config.NewStore(paths.Config(baseDir)),
 		Hub:                device.NewHub(),
 		Queue:              queue.New(0),
 		Live:               newLiveHub(),
@@ -132,6 +133,9 @@ func New(baseDir string) *App {
 
 // Path joins p onto the base directory.
 func (a *App) Path(p ...string) string { return filepath.Join(append([]string{a.BaseDir}, p...)...) }
+
+// ConfigPath returns a path inside the config folder (<base>/config).
+func (a *App) ConfigPath(p ...string) string { return paths.Config(a.BaseDir, p...) }
 
 // Init loads configuration and auxiliary files. First run writes defaults.
 func (a *App) Init() error {

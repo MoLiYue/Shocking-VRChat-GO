@@ -22,7 +22,7 @@ import (
 
 var defaultCurve = []handler.Point{{X: 0, Y: 0}, {X: 1, Y: 1}}
 
-func (a *App) curvePath() string { return a.Path("curve_config.yaml") }
+func (a *App) curvePath() string { return a.ConfigPath("curve_config.yaml") }
 
 func toPoints(v any) []handler.Point {
 	pts := []handler.Point{}
@@ -165,7 +165,7 @@ func (a *App) apiCurveDelete(r *http.Request) (any, error) {
 
 // ---------------------------------------------------------------- overlimit rules
 
-func (a *App) overlimitPath() string { return a.Path("overlimit_rules.yaml") }
+func (a *App) overlimitPath() string { return a.ConfigPath("overlimit_rules.yaml") }
 
 // Overlimit rules temporarily raise a channel's strength cap:
 //
@@ -573,7 +573,7 @@ func (a *App) apiOverlimitDelete(r *http.Request) (any, error) {
 
 // ---------------------------------------------------------------- profiles
 
-func (a *App) profilesDir() string { return a.Path("profiles") }
+func (a *App) profilesDir() string { return a.ConfigPath("profiles") }
 
 // safeName mirrors re.sub(r'[^\w\u4e00-\u9fff\-]', '_', name.strip())[:50].
 func safeName(name string) string {

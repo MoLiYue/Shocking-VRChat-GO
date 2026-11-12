@@ -28,6 +28,7 @@ import (
 	"shockingvrc/internal/app"
 	"shockingvrc/internal/config"
 	"shockingvrc/internal/logx"
+	"shockingvrc/internal/paths"
 	"shockingvrc/internal/ui"
 )
 
@@ -74,10 +75,10 @@ func listenWithRetry(addr string, wait time.Duration) (net.Listener, error) {
 
 func fatal(base string, err error) {
 	msg := fmt.Sprintf("Shocking VRChat crashed at startup:\n\n%v\n", err)
-	_ = os.WriteFile(filepath.Join(base, "error.log"), []byte(msg+"\n"+string(debug.Stack())), 0o644)
+	_ = os.WriteFile(paths.Logs(base, "error.log"), []byte(msg+"\n"+string(debug.Stack())), 0o644)
 	logx.Error("%v", err)
-	logx.Error("[init] Unexpected Error. See error.log for details.")
-	ui.ErrorBox("Shocking VRChat - Error", "程序启动失败，详细信息已写入 error.log:\n\n"+truncate(err.Error(), 500))
+	logx.Error("[init] Unexpected Error. See logs\\error.log for details.")
+	ui.ErrorBox("Shocking VRChat - Error", "程序启动失败，详细信息已写入 logs\\error.log:\n\n"+truncate(err.Error(), 500))
 	logx.Close()
 	os.Exit(1)
 }
@@ -99,10 +100,22 @@ func main() {
 
 	base := baseDir(*dirFlag)
 	_ = os.MkdirAll(base, 0o755)
-	_ = logx.OpenFile(filepath.Join(base, "shocking_vrchat.log"))
+	// Up to 0.7.21 configs and logs lay next to the exe; move them into
+	// config/ and logs/ before anything opens them.
+	mig := paths.Migrate(base)
+	_ = logx.OpenFile(paths.Logs(base, "shocking_vrchat.log"))
 	defer logx.Close()
 	setupCrashLog(base)
 	logx.Info("[init] Shocking VRChat %s (Go %s, %s/%s) dir=%s", app.Version, runtime.Version(), runtime.GOOS, runtime.GOARCH, base)
+	for _, m := range mig.Moved {
+		logx.Info("[init] Moved %s", m)
+	}
+	for _, s := range mig.Skipped {
+		logx.Warn("[init] Left %s in place: the new folder already has this file", s)
+	}
+	for _, e := range mig.Errors {
+		logx.Warn("[init] Folder migration: %v", e)
+	}
 
 	if n, err := assets.ExtractDefaults(base); err != nil {
 		logx.Warn("[init] Could not extract default presets: %v", err)
@@ -219,7 +232,7 @@ func main() {
 		if ui.RunWindow(ui.Options{
 			URL: url, Title: "Shocking VRChat",
 			Width: 1280, Height: 860, MinWidth: 960, MinHeight: 640,
-			Debug: *devtools, StateFile: filepath.Join(base, "window_state.json"),
+			Debug: *devtools, StateFile: paths.Config(base, "window_state.json"),
 			Dark: a.UIThemeDark(),
 			HideOnClose: func() bool {
 				return a.TrayAvailable && config.Bool(a.Cfg.Get("general", "minimize_to_tray"), false)
@@ -298,7 +311,7 @@ func pick(a *app.App, zh, en string) string {
 // to crash.log. A windowsgui exe has no console, so without this a crash
 // just makes the window vanish with no trace.
 func setupCrashLog(base string) {
-	path := filepath.Join(base, "crash.log")
+	path := paths.Logs(base, "crash.log")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		logx.Warn("[init] Cannot open crash.log: %v", err)

@@ -74,7 +74,7 @@ func newParamMonitor(a *App) *paramMonitor {
 		prefixes: append([]string(nil), defaultMonitorPrefixes...)}
 }
 
-func (m *paramMonitor) path() string { return m.a.Path(monitorFile) }
+func (m *paramMonitor) path() string { return m.a.ConfigPath(monitorFile) }
 
 // refreshSettingsLocked re-reads enabled/prefixes from the config (cheap
 // enough every few seconds; record() runs for every OSC message).

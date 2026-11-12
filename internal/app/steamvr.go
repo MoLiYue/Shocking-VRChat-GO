@@ -25,7 +25,10 @@ const steamVRAppKey = "moliyue.shocking_vrchat"
 // steamDir finds the Steam install folder ("" if unknown); var for tests.
 var steamDir = platformSteamDir
 
-func (a *App) steamVRManifestPath() string { return a.Path("shocking_vrchat.vrmanifest") }
+func (a *App) steamVRManifestPath() string { return a.ConfigPath("shocking_vrchat.vrmanifest") }
+
+// legacyManifestPath is where 0.7.21 and older wrote the manifest.
+func (a *App) legacyManifestPath() string { return a.Path("shocking_vrchat.vrmanifest") }
 
 func (a *App) writeSteamVRManifest() (string, error) {
 	exe, err := os.Executable()
@@ -111,6 +114,9 @@ func (a *App) setSteamVRAutostart(on bool) error {
 	found := false
 	for _, p := range config.AsList(ac["manifest_paths"]) {
 		s := config.Str(p, "")
+		if samePath(s, a.legacyManifestPath()) {
+			continue // moved into config/ (re-registered below)
+		}
 		if samePath(s, manifest) {
 			found = true
 			if !on {

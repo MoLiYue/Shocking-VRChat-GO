@@ -190,8 +190,10 @@ func TestSteamVRAutostart(t *testing.T) {
 	defer func() { steamDir = old }()
 	appcfg := filepath.Join(steam, "config", "appconfig.json")
 	_ = os.MkdirAll(filepath.Dir(appcfg), 0o755)
-	_ = os.WriteFile(appcfg, []byte(`{"manifest_paths":["C:\\Other\\app.vrmanifest"],"other":1}`), 0o644)
 	e := newEnv(t)
+	// 0.7.21 registered the manifest next to the exe; that entry is replaced.
+	legacy, _ := json.Marshal(e.a.legacyManifestPath())
+	_ = os.WriteFile(appcfg, []byte(`{"manifest_paths":["C:\\Other\\app.vrmanifest",`+string(legacy)+`],"other":1}`), 0o644)
 	r := e.postJSON(t, "/api/v1/steamvr", map[string]any{"enabled": true})
 	if r["registered"] != true || r["autolaunch"] != true || r["enabled"] != true {
 		t.Fatalf("enable %v", r)

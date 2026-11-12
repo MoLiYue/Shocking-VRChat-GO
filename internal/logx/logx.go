@@ -66,9 +66,11 @@ type Entry struct {
 }
 
 const (
-	bufferMax   = 500
-	rotateBytes = 5 * 1024 * 1024
-	retention   = 2
+	bufferMax = 500
+	// 10 MB per file, newest 10 rotated files kept (~110 MB): enough for
+	// hours of DEBUG output, so a problem is still in the log afterwards.
+	rotateBytes = 10 * 1024 * 1024
+	retention   = 10
 )
 
 var (

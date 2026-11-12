@@ -39,7 +39,18 @@ Windows 10/11 已自带 WebView2 运行时；若缺失，程序会自动改用�
 | `-dir <path>` | 数据目录（配置、预设、日志），默认 exe 所在目录 |
 | `-devtools` | 启用 WebView2 开发者工具 |
 
-日志写入 `shocking_vrchat.log`（5 MB 轮转），启动失败写入 `error.log` 并弹窗提示。
+数据目录（默认 exe 所在目录）结构：
+
+```
+config/        配置：settings-v0.2.yaml、settings-advanced-v0.2.yaml、超限规则、曲线、profiles/ 等
+logs/          日志：shocking_vrchat.log（10 MB 轮转，保留 10 份）、crash.log、error.log、update.log
+wave_presets/  波形预设
+dg-lab/        DG-LAB 页面模板
+recordings/    OSC 录制
+```
+
+0.7.21 及更早版本把配置和日志直接放在 exe 旁边；新版本启动时会自动移入 `config/` 和 `logs/`
+（不会覆盖已存在的文件）。移动后再降级到旧版本时，旧版本找不到配置，需要手动把 `config/` 里的文件拷回 exe 旁边。
 
 ## 安全说明
 
@@ -53,7 +64,7 @@ Web 管理接口（默认 `0.0.0.0:8800`）与 DG-LAB WS 服务（`0.0.0.0:28846
 - **跨站请求拦截**：其他网站的页面不能调用 API 或连接 WebSocket（例如用 `<img>` 触发电击），
   依据浏览器的 `Sec-Fetch-Site` / `Origin` 判断。DG-LAB APP、脚本、curl 等非浏览器客户端不受影响。
 - **DNS 重绑定防护**：只接受 IP、`localhost` 和本机名作为 Host。如果通过自定义域名访问管理页面，
-  需在 `settings-advanced-v0.2.yaml` 的 `web_server.allowed_hosts` 中添加该域名。
+  需在 `config/settings-advanced-v0.2.yaml` 的 `web_server.allowed_hosts` 中添加该域名。
 - 以上两项只作用于管理页面和 API；设备端点（WS 端口 28846、`/ws/dglab-v4`）不做 Origin/Host 检查，
   只校验二维码里的随机 `master_uuid` / `tid`，避免 DG-LAB APP 连接被拒。
 - **强度接口受上限约束**：`/api/v1/strength/.../set|add` 与 `strength_boost` 不再绕过强度上限。

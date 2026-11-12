@@ -329,7 +329,7 @@ func TestSettingsAPIs(t *testing.T) {
 	if config.Int(r["channel_a"], 0) != 200 || r["overlimit_b"] != nil {
 		t.Fatal(r)
 	}
-	b, _ := os.ReadFile(filepath.Join(e.a.BaseDir, config.FileBasic))
+	b, _ := os.ReadFile(e.a.ConfigPath(config.FileBasic))
 	if !strings.Contains(string(b), "strength_limit: 200") {
 		t.Fatalf("not saved: %s", b)
 	}
@@ -591,7 +591,9 @@ func TestUpdateScript(t *testing.T) {
 		`tasklist /FI "PID eq 1234" /NH 2>nul | find /I "shocking_vrchat.exe"`,
 		"/R:10 /W:1",           // no endless robocopy retry
 		`"settings-v0.2.yaml"`, // config never overwritten
-		`/XC /XN /XO`,          // presets: add only
+		`"config" "logs"`,      // nor the config and log folders
+		`set "LOG=C:\SV 中文\logs\update.log"`,
+		`/XC /XN /XO`, // presets: add only
 		`start "" "C:\SV 中文\shocking_vrchat.exe"`,
 		`rmdir /s /q "C:\T"`,
 	} {
